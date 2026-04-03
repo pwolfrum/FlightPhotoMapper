@@ -14,29 +14,42 @@
             display: none;
             position: absolute;
             top: 40px;
-            right: 20px;
+            left: 20px;
             background: rgba(20, 20, 30, 0.92);
             border: 1px solid #555;
             border-radius: 8px;
             padding: 12px;
-            max-width: 720px;
+            width: 720px;
+            max-width: calc(100vw - 40px);
             max-height: calc(100vh - 80px);
+            min-width: 320px;
+            min-height: 220px;
             z-index: 1000;
             box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-            resize: both;
             overflow: auto;
+        }
+        #imagePanel .panel-stage {
+            position: relative;
         }
         #imagePanel img {
             max-width: 100%;
             max-height: calc(100vh - 180px);
             border-radius: 4px;
             display: block;
+            margin: 0 auto;
         }
         #imagePanel .panel-toolbar {
             display: flex;
             justify-content: flex-end;
+            align-items: center;
             gap: 8px;
             margin-bottom: 4px;
+            cursor: move;
+            user-select: none;
+        }
+        #imagePanel .panel-actions {
+            display: flex;
+            gap: 8px;
         }
         #imagePanel .panel-toolbar button {
             color: #ccc;
@@ -48,26 +61,76 @@
             padding: 2px 6px;
         }
         #imagePanel .panel-toolbar button:hover { color: #fff; }
+        #imagePanel .panel-toolbar button:disabled,
+        #imagePanel .image-nav button:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+        #imagePanel .image-nav {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            transform: translateY(-50%);
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+        #imagePanel .image-nav button {
+            pointer-events: auto;
+            background: rgba(20, 20, 30, 0.75);
+            border: 1px solid #666;
+            color: #fff;
+            width: 36px;
+            height: 36px;
+            border-radius: 999px;
+            cursor: pointer;
+            margin: 0 8px;
+            font-size: 20px;
+            line-height: 1;
+        }
         #imagePanel .img-label {
             color: #ccc;
             font-size: 12px;
             margin-top: 6px;
             text-align: center;
         }
+        #imagePanel .resize-handle {
+            position: absolute;
+            right: 6px;
+            bottom: 6px;
+            width: 18px;
+            height: 18px;
+            cursor: nwse-resize;
+            opacity: 0.7;
+        }
+        #imagePanel .resize-handle::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(135deg, transparent 0 50%, #888 50% 58%, transparent 58% 100%),
+                linear-gradient(135deg, transparent 0 68%, #aaa 68% 76%, transparent 76% 100%),
+                linear-gradient(135deg, transparent 0 86%, #ccc 86% 94%, transparent 94% 100%);
+        }
 
         #imagePanel.fullscreen {
-            top: 0; right: 0;
+            top: 0;
+            left: 0;
+            right: 0;
             max-width: 100vw;
             max-height: 100vh;
             width: 100vw;
             height: 100vh;
             border-radius: 0;
-            resize: none;
         }
         #imagePanel.fullscreen img {
             max-width: calc(100vw - 40px);
             max-height: calc(100vh - 80px);
             margin: 0 auto;
+        }
+        #imagePanel.fullscreen .resize-handle {
+            display: none;
         }
 
         #legend {
@@ -96,11 +159,20 @@
 
     <div id="imagePanel">
         <div class="panel-toolbar">
-            <button onclick="toggleFullscreen()" title="Toggle fullscreen">⛶</button>
-            <button onclick="closeImagePanel()" title="Close">&times;</button>
+            <div class="panel-actions">
+                <button onclick="toggleFullscreen()" title="Toggle fullscreen">⛶</button>
+                <button onclick="closeImagePanel()" title="Close">&times;</button>
+            </div>
         </div>
-        <img id="panelImage" src="" alt="">
+        <div class="panel-stage">
+            <img id="panelImage" src="" alt="">
+            <div class="image-nav">
+                <button id="prevImageOverlayBtn" onclick="showPreviousImage()" title="Previous image">‹</button>
+                <button id="nextImageOverlayBtn" onclick="showNextImage()" title="Next image">›</button>
+            </div>
+        </div>
         <div class="img-label" id="panelLabel"></div>
+        <div class="resize-handle" id="resizeHandle" title="Resize panel"></div>
     </div>
 
     <div id="legend"></div>
@@ -144,6 +216,7 @@
 
         const viewer = new Cesium.Viewer('cesiumContainer', viewerOptions);
         viewer.scene.globe.enableLighting = false;
+        const imageEntities = [];
 
         // --- Render data ---
         function loadData() {
@@ -175,7 +248,7 @@
             legendEl.innerHTML = legendHtml;
 
             IMAGES.forEach((img) => {
-                viewer.entities.add({
+                const entity = viewer.entities.add({
                     name: img.filename,
                     position: Cesium.Cartesian3.fromDegrees(img.lon, img.lat, img.alt + 15),
                     billboard: {
@@ -193,6 +266,7 @@
                         alt: img.alt,
                     }
                 });
+                imageEntities.push(entity);
             });
 
             if (TRACKS.length > 0 || IMAGES.length > 0) {
@@ -202,9 +276,22 @@
 
         // --- Selection & highlight ---
         let selectedEntity = null;
+        let currentImageIndex = -1;
         let connectorEntity = null;
         const NORMAL_SIZE = 48;
         const SELECTED_SIZE = 56;
+
+        function getEntityFilename(entity) {
+            return entity?.properties?.filename?.getValue?.();
+        }
+
+        function updateNavigationButtons() {
+            const hasImages = imageEntities.length > 0;
+            const atStart = currentImageIndex <= 0;
+            const atEnd = currentImageIndex >= imageEntities.length - 1;
+            document.getElementById('prevImageOverlayBtn').disabled = !hasImages || atStart;
+            document.getElementById('nextImageOverlayBtn').disabled = !hasImages || atEnd;
+        }
 
         function highlightEntity(entity) {
             if (selectedEntity && selectedEntity.billboard) {
@@ -250,14 +337,25 @@
         handler.setInputAction(function(click) {
             const picked = viewer.scene.pick(click.position);
             if (Cesium.defined(picked) && picked.id && picked.id.properties) {
-                const props = picked.id.properties;
-                const filename = props.filename?.getValue();
-                if (filename) {
-                    showImagePanel(filename, props);
-                    highlightEntity(picked.id);
+                const imageIndex = imageEntities.indexOf(picked.id);
+                if (imageIndex !== -1) {
+                    showImageAtIndex(imageIndex);
                 }
             }
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+        function showImageAtIndex(index) {
+            if (index < 0 || index >= imageEntities.length) {
+                return;
+            }
+            currentImageIndex = index;
+            const entity = imageEntities[index];
+            const props = entity.properties;
+            const filename = getEntityFilename(entity);
+            showImagePanel(filename, props);
+            highlightEntity(entity);
+            updateNavigationButtons();
+        }
 
         function showImagePanel(filename, props) {
             const panel = document.getElementById('imagePanel');
@@ -268,23 +366,166 @@
             const lon = props.lon?.getValue()?.toFixed(6) ?? '';
             const alt = props.alt?.getValue()?.toFixed(0) ?? '';
             label.textContent = `${filename}  (${lat}, ${lon}, ${alt}m)`;
+            if (window.IMAGE_MODE === 'fullscreen') {
+                enterFullscreen();
+            }
             panel.style.display = 'block';
+        }
+
+        function showPreviousImage() {
+            showImageAtIndex(currentImageIndex - 1);
+        }
+
+        function showNextImage() {
+            showImageAtIndex(currentImageIndex + 1);
         }
 
         function closeImagePanel() {
             const panel = document.getElementById('imagePanel');
-            panel.classList.remove('fullscreen');
+            exitFullscreen();
             panel.style.display = 'none';
+            currentImageIndex = -1;
+            updateNavigationButtons();
             highlightEntity(null);
         }
 
         function toggleFullscreen() {
-            document.getElementById('imagePanel').classList.toggle('fullscreen');
+            const panel = document.getElementById('imagePanel');
+            if (panel.classList.contains('fullscreen')) {
+                exitFullscreen();
+            } else {
+                enterFullscreen();
+            }
+        }
+
+        function enterFullscreen() {
+            const panel = document.getElementById('imagePanel');
+            if (panel.classList.contains('fullscreen')) {
+                return;
+            }
+            panel.dataset.prevLeft = panel.style.left;
+            panel.dataset.prevTop = panel.style.top;
+            panel.dataset.prevRight = panel.style.right;
+            panel.dataset.prevWidth = panel.style.width;
+            panel.dataset.prevHeight = panel.style.height;
+            panel.dataset.prevMaxWidth = panel.style.maxWidth;
+            panel.style.removeProperty('left');
+            panel.style.removeProperty('top');
+            panel.style.removeProperty('right');
+            panel.style.removeProperty('width');
+            panel.style.removeProperty('height');
+            panel.style.removeProperty('max-width');
+            panel.classList.add('fullscreen');
+        }
+
+        function exitFullscreen() {
+            const panel = document.getElementById('imagePanel');
+            if (!panel.classList.contains('fullscreen')) {
+                return;
+            }
+            panel.classList.remove('fullscreen');
+            panel.style.left = panel.dataset.prevLeft || '';
+            panel.style.top = panel.dataset.prevTop || '';
+            panel.style.right = panel.dataset.prevRight || '';
+            panel.style.width = panel.dataset.prevWidth || '';
+            panel.style.height = panel.dataset.prevHeight || '';
+            panel.style.maxWidth = panel.dataset.prevMaxWidth || '';
+        }
+
+        function anchorPanelToViewport(panel) {
+            panel.style.left = `${panel.offsetLeft}px`;
+            panel.style.top = `${panel.offsetTop}px`;
+            panel.style.right = 'auto';
         }
 
         document.addEventListener('keydown', (e) => {
+            const panel = document.getElementById('imagePanel');
+            if (panel.style.display !== 'block') {
+                return;
+            }
             if (e.key === 'Escape') closeImagePanel();
+            if (e.key === 'ArrowLeft') showPreviousImage();
+            if (e.key === 'ArrowRight') showNextImage();
         });
+
+        (function setupPanelResize() {
+            const panel = document.getElementById('imagePanel');
+            const handle = document.getElementById('resizeHandle');
+            let resizeState = null;
+
+            handle.addEventListener('mousedown', (event) => {
+                if (panel.classList.contains('fullscreen')) {
+                    return;
+                }
+                anchorPanelToViewport(panel);
+                resizeState = {
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startWidth: panel.offsetWidth,
+                    startHeight: panel.offsetHeight,
+                };
+                event.preventDefault();
+            });
+
+            window.addEventListener('mousemove', (event) => {
+                if (!resizeState) {
+                    return;
+                }
+                const width = Math.max(320, resizeState.startWidth + (event.clientX - resizeState.startX));
+                const height = Math.max(220, resizeState.startHeight + (event.clientY - resizeState.startY));
+                panel.style.width = `${width}px`;
+                panel.style.height = `${height}px`;
+            });
+
+            window.addEventListener('mouseup', () => {
+                resizeState = null;
+            });
+        })();
+
+        (function setupPanelDrag() {
+            const panel = document.getElementById('imagePanel');
+            const toolbar = panel.querySelector('.panel-toolbar');
+            let dragState = null;
+
+            toolbar.addEventListener('mousedown', (event) => {
+                if (panel.classList.contains('fullscreen')) {
+                    return;
+                }
+                if (event.target.closest('button')) {
+                    return;
+                }
+                dragState = {
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startLeft: panel.offsetLeft,
+                    startTop: panel.offsetTop,
+                };
+                anchorPanelToViewport(panel);
+                event.preventDefault();
+            });
+
+            window.addEventListener('mousemove', (event) => {
+                if (!dragState) {
+                    return;
+                }
+                const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
+                const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
+                const nextLeft = Math.min(
+                    Math.max(0, dragState.startLeft + (event.clientX - dragState.startX)),
+                    maxLeft,
+                );
+                const nextTop = Math.min(
+                    Math.max(0, dragState.startTop + (event.clientY - dragState.startY)),
+                    maxTop,
+                );
+                panel.style.left = `${nextLeft}px`;
+                panel.style.top = `${nextTop}px`;
+            });
+
+            window.addEventListener('mouseup', () => {
+                dragState = null;
+            });
+        })();
 
         loadData();
     </script>

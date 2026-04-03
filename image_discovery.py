@@ -108,9 +108,12 @@ def read_image_info(path: Path) -> ImageInfo:
 
 
 def discover_images(
-    directory: Path, recursive: bool = True, exclude_dirs: set[str] | None = None
+    directory: Path, recursive: bool = False, exclude_dirs: set[str] | None = None
 ) -> list[ImageInfo]:
-    """Find all image files in a directory and read their metadata."""
+    """Find image files in a directory and read their metadata.
+
+    By default, only files directly inside the selected directory are considered.
+    """
     if exclude_dirs is None:
         exclude_dirs = {"geotagged"}
     images: list[ImageInfo] = []

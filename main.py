@@ -30,9 +30,9 @@ def select_directory(
 
 
 def discover_tracks(directory: Path) -> list[Track]:
-    """Find and parse all track files in a directory (recursively)."""
+    """Find and parse all track files directly inside a directory."""
     tracks: list[Track] = []
-    for p in sorted(directory.rglob("*")):
+    for p in sorted(directory.iterdir()):
         if p.is_file() and p.suffix.lower() in TRACK_EXTENSIONS:
             try:
                 tracks.extend(parse_track_file(p))
@@ -550,7 +550,8 @@ def main():
             print(f"Not a directory: {input_dir}")
             return
 
-        _prepare_gps_images(input_dir)
+        if not _prepare_gps_images(input_dir):
+            return
 
         if not fullscreen:
             choice = (
@@ -561,7 +562,12 @@ def main():
             if choice == "f":
                 fullscreen = True
 
-        serve(input_dir, port=port, image_mode="fullscreen" if fullscreen else "panel")
+        serve(
+            input_dir,
+            port=port,
+            image_mode="fullscreen" if fullscreen else "panel",
+            include_tracks=False,
+        )
         return
 
     # Check for 'export' subcommand

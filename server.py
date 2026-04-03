@@ -81,7 +81,9 @@ def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
         return None
 
 
-def create_app(input_dir: Path, image_mode: str = "panel") -> Flask:
+def create_app(
+    input_dir: Path, image_mode: str = "panel", include_tracks: bool = True
+) -> Flask:
     """Create and configure the Flask app for serving the map viewer."""
     app = Flask(
         __name__,
@@ -94,26 +96,27 @@ def create_app(input_dir: Path, image_mode: str = "panel") -> Flask:
 
     # Pre-load track data
     tracks_data = []
-    for p in sorted(input_dir.rglob("*")):
-        if p.is_file() and p.suffix.lower() in TRACK_EXTENSIONS:
-            try:
-                for track in parse_track_file(p):
-                    tracks_data.append(
-                        {
-                            "name": track.name,
-                            "points": [
-                                {
-                                    "time": pt.time.isoformat(),
-                                    "lat": pt.lat,
-                                    "lon": pt.lon,
-                                    "alt": pt.alt,
-                                }
-                                for pt in track.points
-                            ],
-                        }
-                    )
-            except ValueError:
-                pass
+    if include_tracks:
+        for p in sorted(input_dir.iterdir()):
+            if p.is_file() and p.suffix.lower() in TRACK_EXTENSIONS:
+                try:
+                    for track in parse_track_file(p):
+                        tracks_data.append(
+                            {
+                                "name": track.name,
+                                "points": [
+                                    {
+                                        "time": pt.time.isoformat(),
+                                        "lat": pt.lat,
+                                        "lon": pt.lon,
+                                        "alt": pt.alt,
+                                    }
+                                    for pt in track.points
+                                ],
+                            }
+                        )
+                except ValueError:
+                    pass
 
     # Pre-load geotagged image metadata
     images_data = []
@@ -237,12 +240,17 @@ def _kill_port(port: int) -> None:
         pass
 
 
-def serve(input_dir: Path, port: int = 5000, image_mode: str = "panel") -> None:
+def serve(
+    input_dir: Path,
+    port: int = 5000,
+    image_mode: str = "panel",
+    include_tracks: bool = True,
+) -> None:
     """Start the Flask server and open the browser."""
     # Load .env from project root (where server.py lives)
     _load_dotenv(Path(__file__).parent)
     _kill_port(port)
-    app = create_app(input_dir, image_mode=image_mode)
+    app = create_app(input_dir, image_mode=image_mode, include_tracks=include_tracks)
     token = os.environ.get("CESIUM_ION_TOKEN", "")
     if not token:
         print("\n  NOTE: Set CESIUM_ION_TOKEN environment variable for 3D terrain.")

@@ -39,7 +39,7 @@ def export(input_dir: Path, output_dir: Path) -> None:
 
     # Collect track data
     tracks_data = []
-    for p in sorted(input_dir.rglob("*")):
+    for p in sorted(input_dir.iterdir()):
         if p.is_file() and p.suffix.lower() in TRACK_EXTENSIONS:
             try:
                 for track in parse_track_file(p):

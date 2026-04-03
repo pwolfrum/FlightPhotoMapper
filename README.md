@@ -18,7 +18,7 @@ CESIUM_ION_TOKEN="your_token_here"
 
 ## Folder structure
 
-Both commands expect the same input folder — one that contains your track files and photos:
+Both commands expect the same input folder — one that contains your track files and photos directly in that folder:
 
 ```
 my-trip/
@@ -31,7 +31,7 @@ my-trip/
     IMG_002.jpg
 ```
 
-The viewer reads tracks from the input folder and geotagged images from the `geotagged/` subfolder. If you accidentally select the `geotagged/` folder in the dialog, it will auto-correct to its parent.
+The tool only reads track files and images directly in the folder you select; it does not scan nested subfolders. The viewer reads tracks from the input folder and geotagged images from the `geotagged/` subfolder. If you accidentally select the `geotagged/` folder in the dialog, it will auto-correct to its parent.
 
 ## Usage
 
