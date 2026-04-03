@@ -80,6 +80,7 @@ uv run python main.py serve
 | `serve` | View-only mode (no geotagging) |
 | `serve --port N` | Set the server port (default: 5000) |
 | `serve --fullscreen` | Open images in fullscreen mode by default |
+| `show` | Display GPS-tagged images on the map (no tracks needed) |
 | `export` | Export a self-contained static site |
 | `export --output DIR` | Set the export output directory (default: `<input>/export/`) |
 
@@ -92,6 +93,17 @@ uv run python main.py path/to/my-trip --time-offset -13
 ```
 
 A **negative** value shifts images earlier (camera was ahead), **positive** shifts later (camera was behind). Each run overwrites the previous `geotagged/` output, so you can quickly iterate to find the right value.
+
+### Show GPS-tagged images (no tracks)
+
+Display images that already have GPS coordinates in their EXIF on the 3D map — no track files needed:
+
+```
+uv run python main.py show path/to/photos
+uv run python main.py show
+```
+
+Images without GPS tags are listed but skipped. HEIC files are automatically converted to JPEG for browser compatibility.
 
 ### Export static site
 

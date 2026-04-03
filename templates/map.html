@@ -210,8 +210,8 @@
                 });
             });
 
-            // Fly to extent of all tracks
-            if (tracks.length > 0) {
+            // Fly to extent of all entities
+            if (tracks.length > 0 || images.length > 0) {
                 viewer.zoomTo(viewer.entities);
             }
         }

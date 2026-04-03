@@ -150,11 +150,15 @@ def create_app(input_dir: Path, image_mode: str = "panel") -> Flask:
 
     @app.route("/api/tracks")
     def api_tracks():
-        return Response(json.dumps(tracks_data), mimetype="application/json")
+        resp = Response(json.dumps(tracks_data), mimetype="application/json")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.route("/api/images")
     def api_images():
-        return Response(json.dumps(images_data), mimetype="application/json")
+        resp = Response(json.dumps(images_data), mimetype="application/json")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.route("/images/<filename>")
     def serve_image(filename: str):
@@ -194,10 +198,50 @@ def create_app(input_dir: Path, image_mode: str = "panel") -> Flask:
     return app
 
 
+def _kill_port(port: int) -> None:
+    """Kill any process currently listening on the given port (Windows)."""
+    import subprocess
+
+    try:
+        # Use netstat but match on port + PID column regardless of locale
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True,
+            text=True,
+        )
+        killed = set()
+        for line in result.stdout.splitlines():
+            # Match lines with our port in a local address column
+            if f":{port} " not in line and f":{port}\t" not in line:
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            # Local address is parts[1], state is parts[3], PID is parts[4]
+            local_addr = parts[1]
+            if not local_addr.endswith(f":{port}"):
+                continue
+            try:
+                pid = int(parts[4])
+            except (ValueError, IndexError):
+                continue
+            if pid == 0 or pid in killed:
+                continue
+            subprocess.run(
+                ["taskkill", "/F", "/PID", str(pid)],
+                capture_output=True,
+            )
+            killed.add(pid)
+            print(f"  Killed previous server (PID {pid}) on port {port}")
+    except Exception:
+        pass
+
+
 def serve(input_dir: Path, port: int = 5000, image_mode: str = "panel") -> None:
     """Start the Flask server and open the browser."""
     # Load .env from project root (where server.py lives)
     _load_dotenv(Path(__file__).parent)
+    _kill_port(port)
     app = create_app(input_dir, image_mode=image_mode)
     token = os.environ.get("CESIUM_ION_TOKEN", "")
     if not token:

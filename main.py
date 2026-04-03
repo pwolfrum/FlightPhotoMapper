@@ -6,6 +6,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
+from PIL import Image
+from pillow_heif import register_heif_opener
+
+register_heif_opener()
+
 from geotagger import interpolate_position, write_gps_exif
 from image_discovery import ImageInfo, discover_images
 from track_parser import TRACK_EXTENSIONS, Track, parse_track_file
@@ -389,6 +394,70 @@ def geotag(
     return True
 
 
+def _prepare_gps_images(input_dir: Path) -> bool:
+    """Find GPS-tagged images and prepare them for the viewer.
+
+    Copies images with valid GPS coordinates to the geotagged/ subfolder
+    (converting HEIC to JPEG as needed). Returns True if any images were found.
+    """
+    print(f"\nScanning for GPS-tagged images: {input_dir}\n")
+
+    images = discover_images(input_dir)
+    if not images:
+        print("No images found.")
+        return False
+
+    with_gps = [img for img in images if img.has_gps]
+    without_gps = [img for img in images if not img.has_gps]
+
+    if with_gps:
+        print(f"  {len(with_gps)} image(s) with GPS coordinates (will be displayed):")
+        for img in with_gps:
+            print(f"    ✓ {img.path.name}")
+
+    if without_gps:
+        print(f"\n  {len(without_gps)} image(s) without GPS coordinates (skipped):")
+        for img in without_gps:
+            print(f"    ✗ {img.path.name}")
+
+    if not with_gps:
+        print("\nNo images with GPS coordinates found. Nothing to display.")
+        return False
+
+    # Copy GPS-tagged images to geotagged/ (converting HEIC→JPEG as needed)
+    output_dir = input_dir / "geotagged"
+    output_dir.mkdir(exist_ok=True)
+
+    # Clean stale files from previous run
+    for old in output_dir.iterdir():
+        if old.is_file():
+            try:
+                old.unlink()
+            except PermissionError:
+                import time
+
+                time.sleep(0.5)
+                old.unlink()
+
+    print(f"\nPreparing {len(with_gps)} image(s)...")
+    for img in with_gps:
+        src = img.path
+        if src.suffix.lower() in (".heic", ".heif"):
+            # Convert HEIC to JPEG for browser compatibility
+            dst = output_dir / (src.stem + ".jpg")
+            pil_img = Image.open(src)
+            exif_data = pil_img.info.get("exif", b"")
+            pil_img.convert("RGB").save(dst, "JPEG", quality=95, exif=exif_data)
+            print(f"  {src.name} → {dst.name} (converted to JPEG)")
+        else:
+            dst = output_dir / src.name
+            shutil.copy2(src, dst)
+            print(f"  {src.name}")
+
+    print(f"\nReady — {len(with_gps)} image(s) → {output_dir}")
+    return True
+
+
 def main():
     import sys
 
@@ -435,6 +504,54 @@ def main():
             print(f"  (Using parent directory: {input_dir})")
 
         # Ask image display mode if not set via flag
+        if not fullscreen:
+            choice = (
+                input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
+                .strip()
+                .lower()
+            )
+            if choice == "f":
+                fullscreen = True
+
+        serve(input_dir, port=port, image_mode="fullscreen" if fullscreen else "panel")
+        return
+
+    # Check for 'show' subcommand — display GPS-tagged images without tracks
+    if args and args[0] == "show":
+        from server import serve
+
+        show_args = args[1:]
+        port = 5000
+        fullscreen = "--fullscreen" in show_args
+        show_args = [a for a in show_args if a != "--fullscreen"]
+        remaining = []
+        i = 0
+        while i < len(show_args):
+            if show_args[i] == "--port" and i + 1 < len(show_args):
+                port = int(show_args[i + 1])
+                i += 2
+            elif show_args[i].startswith("--"):
+                i += 1
+            else:
+                remaining.append(show_args[i])
+                i += 1
+
+        if remaining:
+            input_dir = Path(remaining[0])
+        else:
+            input_dir = select_directory(
+                title="Select folder containing GPS-tagged images"
+            )
+
+        if input_dir is None:
+            print("No directory selected. Exiting.")
+            return
+        if not input_dir.is_dir():
+            print(f"Not a directory: {input_dir}")
+            return
+
+        _prepare_gps_images(input_dir)
+
         if not fullscreen:
             choice = (
                 input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
