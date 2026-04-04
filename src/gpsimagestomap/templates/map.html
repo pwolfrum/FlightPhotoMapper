@@ -235,7 +235,11 @@
 
             // --- Render tracks ---
             tracks.forEach((track, i) => {
-                const color = TRACK_COLORS[i % TRACK_COLORS.length];
+                const style = track.style || {};
+                const color = style.color
+                    ? Cesium.Color.fromCssColorString(style.color)
+                    : TRACK_COLORS[i % TRACK_COLORS.length];
+                const width = style.width ?? 3;
                 const positions = [];
 
                 for (const pt of track.points) {
@@ -246,7 +250,7 @@
                     name: track.name,
                     polyline: {
                         positions: positions,
-                        width: 3,
+                        width: width,
                         material: color,
                         clampToGround: false,
                     }

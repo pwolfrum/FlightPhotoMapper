@@ -3,6 +3,7 @@
 import json
 import os
 import webbrowser
+from datetime import timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -12,10 +13,28 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
-from .image_discovery import IMAGE_EXTENSIONS
+from .image_discovery import IMAGE_EXTENSIONS, read_image_info
 from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
 THUMBNAIL_SIZE = (200, 200)
+
+
+def _build_image_sequence_track(
+    sequence_points: list[dict[str, str | float]],
+) -> dict | None:
+    """Create a virtual track connecting images by timestamp order."""
+    if len(sequence_points) < 2:
+        return None
+
+    ordered_points = sorted(sequence_points, key=lambda p: str(p["time"]))
+    return {
+        "name": "Image sequence",
+        "points": ordered_points,
+        "style": {
+            "color": "#9aa0a6",
+            "width": 1.5,
+        },
+    }
 
 
 def _load_dotenv(directory: Path) -> None:
@@ -120,11 +139,13 @@ def create_app(
 
     # Pre-load geotagged image metadata
     images_data = []
+    image_sequence_points: list[dict[str, str | float]] = []
     if geotagged_dir.is_dir():
         for p in sorted(geotagged_dir.iterdir()):
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
                 coords = _read_gps_from_exif(p)
                 if coords:
+                    img_info = read_image_info(p)
                     images_data.append(
                         {
                             "filename": p.name,
@@ -133,6 +154,23 @@ def create_app(
                             "alt": coords[2],
                         }
                     )
+                    if img_info.timestamp is not None:
+                        timestamp = img_info.timestamp
+                        if timestamp.tzinfo is None:
+                            timestamp = timestamp.replace(tzinfo=timezone.utc)
+                        image_sequence_points.append(
+                            {
+                                "time": timestamp.isoformat(),
+                                "lat": coords[0],
+                                "lon": coords[1],
+                                "alt": coords[2],
+                            }
+                        )
+
+    if not include_tracks:
+        image_sequence_track = _build_image_sequence_track(image_sequence_points)
+        if image_sequence_track is not None:
+            tracks_data.append(image_sequence_track)
 
     print(
         f"  Loaded {len(tracks_data)} track(s), {len(images_data)} geotagged image(s)"
