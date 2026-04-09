@@ -2,9 +2,9 @@
 
 import shutil
 import tkinter as tk
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from PIL import Image
 from pillow_heif import register_heif_opener
@@ -15,6 +15,104 @@ from .geotagger import interpolate_position, write_gps_exif
 from .image_discovery import ImageInfo, discover_images
 from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, Track, parse_track_file
+
+
+def _align_time_for_comparison(reference_time, candidate_time):
+    """Align timezone-awareness between datetimes for safe comparison."""
+    if reference_time.tzinfo is not None and candidate_time.tzinfo is None:
+        return candidate_time.replace(tzinfo=timezone.utc)
+    if reference_time.tzinfo is None and candidate_time.tzinfo is not None:
+        return candidate_time.replace(tzinfo=None)
+    return candidate_time
+
+
+def _count_images_in_tracks(
+    tracks: list[Track], imgs: list[ImageInfo], offset: timedelta
+) -> int:
+    """Count how many images fall into any track range after time offset."""
+    count = 0
+    for img in imgs:
+        if img.timestamp is None:
+            continue
+        shifted = img.timestamp + offset
+        for track in tracks:
+            t_start = track.start_time
+            t_end = track.end_time
+            shifted_cmp = _align_time_for_comparison(t_start, shifted)
+            if t_start <= shifted_cmp <= t_end:
+                count += 1
+                break
+    return count
+
+
+def _clean_output_dir(output_dir: Path) -> None:
+    """Delete stale files from a generated-output directory."""
+    for old in output_dir.iterdir():
+        if old.is_file():
+            try:
+                old.unlink()
+            except PermissionError:
+                import time
+
+                time.sleep(0.5)
+                old.unlink()
+
+
+def _copy_or_convert_for_browser(src: Path, dst: Path) -> Path:
+    """Copy image to destination, converting HEIC/HEIF to JPEG if needed."""
+    if src.suffix.lower() in (".heic", ".heif"):
+        jpg_path = dst.with_suffix(".jpg")
+        pil_img = Image.open(src)
+        exif_data = pil_img.info.get("exif", b"")
+        pil_img.convert("RGB").save(jpg_path, "JPEG", quality=95, exif=exif_data)
+        return jpg_path
+
+    shutil.copy2(src, dst)
+    return dst
+
+
+def _parse_subcommand_port_and_flags(
+    raw_args: list[str],
+    *,
+    default_port: int = 5000,
+    fullscreen_flag: str = "--fullscreen",
+    extra_flags: tuple[str, ...] = (),
+) -> tuple[int, bool, dict[str, bool], list[str]]:
+    """Parse a command's common flags and return remaining positional args."""
+    port = default_port
+    fullscreen = fullscreen_flag in raw_args
+    parsed_extras = {flag: flag in raw_args for flag in extra_flags}
+
+    stripped_args = [
+        a for a in raw_args if a != fullscreen_flag and a not in parsed_extras
+    ]
+
+    remaining = []
+    i = 0
+    while i < len(stripped_args):
+        if stripped_args[i] == "--port" and i + 1 < len(stripped_args):
+            port = int(stripped_args[i + 1])
+            i += 2
+        elif stripped_args[i].startswith("--"):
+            i += 1
+        else:
+            remaining.append(stripped_args[i])
+            i += 1
+
+    return port, fullscreen, parsed_extras, remaining
+
+
+def _choose_image_mode(fullscreen: bool) -> str:
+    """Return chosen image mode, asking interactively when needed."""
+    if fullscreen:
+        return "fullscreen"
+
+    choice = (
+        input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
+        .strip()
+        .lower()
+    )
+    return "fullscreen" if choice == "f" else "panel"
 
 
 def select_directory(
@@ -63,14 +161,7 @@ def match_images_to_tracks(
             if img.timestamp is None:
                 continue
             img_time = img.timestamp
-
-            # Make both timezone-aware or both naive for comparison
-            if t_start.tzinfo is not None and img_time.tzinfo is None:
-                # Track is UTC-aware, image is naive — assume local time = UTC
-                # (This is a fallback; proper timezone handling should convert first)
-                img_time = img_time.replace(tzinfo=timezone.utc)
-            elif t_start.tzinfo is None and img_time.tzinfo is not None:
-                img_time = img_time.replace(tzinfo=None)
+            img_time = _align_time_for_comparison(t_start, img_time)
 
             if t_start <= img_time <= t_end:
                 matched.append(img)
@@ -85,14 +176,14 @@ def handle_no_timestamp_images(images: list[ImageInfo]) -> None:
     if not no_ts:
         return
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"WARNING: {len(no_ts)} image(s) have NO timestamp in EXIF:")
     for img in no_ts:
         print(f"  - {img.path.name}")
-    print(f"\nThese images cannot be placed on any track without a timestamp.")
-    print(f"Common causes: sent via messaging apps (Signal, WhatsApp),")
-    print(f"screenshots, or manually edited photos.")
-    print(f"{'='*60}\n")
+    print("\nThese images cannot be placed on any track without a timestamp.")
+    print("Common causes: sent via messaging apps (Signal, WhatsApp),")
+    print("screenshots, or manually edited photos.")
+    print(f"{'=' * 60}\n")
 
     while True:
         choice = (
@@ -137,25 +228,7 @@ def detect_timezone_correction(
         return None
 
     # Check how many uncertain images already match a track (with 0 offset)
-    def count_matching(imgs: list[ImageInfo], offset: timedelta) -> int:
-        count = 0
-        for img in imgs:
-            shifted = img.timestamp + offset
-            # Make timezone-aware if tracks are aware
-            for track in tracks:
-                t_start = track.start_time
-                t_end = track.end_time
-                shifted_cmp = shifted
-                if t_start.tzinfo is not None and shifted_cmp.tzinfo is None:
-                    shifted_cmp = shifted_cmp.replace(tzinfo=timezone.utc)
-                elif t_start.tzinfo is None and shifted_cmp.tzinfo is not None:
-                    shifted_cmp = shifted_cmp.replace(tzinfo=None)
-                if t_start <= shifted_cmp <= t_end:
-                    count += 1
-                    break
-        return count
-
-    zero_matches = count_matching(uncertain, timedelta(0))
+    zero_matches = _count_images_in_tracks(tracks, uncertain, timedelta(0))
 
     # If all uncertain images already match, no correction needed
     if zero_matches == len(uncertain):
@@ -168,7 +241,7 @@ def detect_timezone_correction(
         if hours == 0:
             continue
         offset = timedelta(hours=hours)
-        count = count_matching(uncertain, offset)
+        count = _count_images_in_tracks(tracks, uncertain, offset)
         if count > best_count:
             best_count = count
             best_offset = offset
@@ -205,37 +278,20 @@ def handle_timezone_uncertainty(
     sign = "+" if hours > 0 else ""
 
     # Count how many images would match with vs without correction
-    def count_in_tracks(imgs: list[ImageInfo], offset: timedelta) -> int:
-        count = 0
-        for img in imgs:
-            shifted = img.timestamp + offset
-            for track in tracks:
-                t_start = track.start_time
-                t_end = track.end_time
-                shifted_cmp = shifted
-                if t_start.tzinfo is not None and shifted_cmp.tzinfo is None:
-                    shifted_cmp = shifted_cmp.replace(tzinfo=timezone.utc)
-                elif t_start.tzinfo is None and shifted_cmp.tzinfo is not None:
-                    shifted_cmp = shifted_cmp.replace(tzinfo=None)
-                if t_start <= shifted_cmp <= t_end:
-                    count += 1
-                    break
-        return count
+    current = _count_images_in_tracks(tracks, uncertain, timedelta(0))
+    corrected = _count_images_in_tracks(tracks, uncertain, correction)
 
-    current = count_in_tracks(uncertain, timedelta(0))
-    corrected = count_in_tracks(uncertain, correction)
-
-    print(f"\n{'='*60}")
-    print(f"TIMEZONE UNCERTAINTY DETECTED")
+    print(f"\n{'=' * 60}")
+    print("TIMEZONE UNCERTAINTY DETECTED")
     print(f"  {len(uncertain)} image(s) have no timezone info in EXIF.")
     print(f"  Currently {current} of them fall within a track's time range.")
     print(
         f"  Applying a {sign}{hours}h correction would place {corrected} within a track."
     )
     print()
-    print(f"  This likely means the camera clock was set to a timezone")
+    print("  This likely means the camera clock was set to a timezone")
     print(f"  that is {sign}{hours}h relative to UTC.")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     if skip_prompt:
         print(
@@ -371,15 +427,7 @@ def geotag(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Remove stale files from previous run to avoid Windows file-lock issues
-    for old in output_dir.iterdir():
-        if old.is_file():
-            try:
-                old.unlink()
-            except PermissionError:
-                import time
-
-                time.sleep(0.5)
-                old.unlink()
+    _clean_output_dir(output_dir)
 
     total_tagged = 0
     for track, imgs in matches:
@@ -388,17 +436,7 @@ def geotag(
 
             if img.has_gps:
                 # GPS-tagged: copy as-is, preserving original coordinates
-                if img.path.suffix.lower() in (".heic", ".heif"):
-                    jpg_path = out_path.with_suffix(".jpg")
-                    pil_img = Image.open(img.path)
-                    exif_data = pil_img.info.get("exif", b"")
-                    pil_img.convert("RGB").save(
-                        jpg_path, "JPEG", quality=95, exif=exif_data
-                    )
-                    saved = jpg_path
-                else:
-                    shutil.copy2(img.path, out_path)
-                    saved = out_path
+                saved = _copy_or_convert_for_browser(img.path, out_path)
                 total_tagged += 1
                 print(f"  {img.path.name} → {saved.name} (GPS preserved)")
                 continue
@@ -459,29 +497,15 @@ def _prepare_gps_images(input_dir: Path) -> bool:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Clean stale files from previous run
-    for old in output_dir.iterdir():
-        if old.is_file():
-            try:
-                old.unlink()
-            except PermissionError:
-                import time
-
-                time.sleep(0.5)
-                old.unlink()
+    _clean_output_dir(output_dir)
 
     print(f"\nPreparing {len(with_gps)} image(s)...")
     for img in with_gps:
         src = img.path
-        if src.suffix.lower() in (".heic", ".heif"):
-            # Convert HEIC to JPEG for browser compatibility
-            dst = output_dir / (src.stem + ".jpg")
-            pil_img = Image.open(src)
-            exif_data = pil_img.info.get("exif", b"")
-            pil_img.convert("RGB").save(dst, "JPEG", quality=95, exif=exif_data)
+        dst = _copy_or_convert_for_browser(src, output_dir / src.name)
+        if dst.suffix.lower() == ".jpg" and src.suffix.lower() in (".heic", ".heif"):
             print(f"  {src.name} → {dst.name} (converted to JPEG)")
         else:
-            dst = output_dir / src.name
-            shutil.copy2(src, dst)
             print(f"  {src.name}")
 
     print(f"\nReady — {len(with_gps)} image(s) → {output_dir}")
@@ -497,22 +521,7 @@ def main():
     if args and args[0] == "serve":
         from .server import serve
 
-        serve_args = args[1:]
-        port = 5000
-        fullscreen = "--fullscreen" in serve_args
-        serve_args = [a for a in serve_args if a != "--fullscreen"]
-        # Parse --port option
-        remaining = []
-        i = 0
-        while i < len(serve_args):
-            if serve_args[i] == "--port" and i + 1 < len(serve_args):
-                port = int(serve_args[i + 1])
-                i += 2
-            elif serve_args[i].startswith("--"):
-                i += 1
-            else:
-                remaining.append(serve_args[i])
-                i += 1
+        port, fullscreen, _, remaining = _parse_subcommand_port_and_flags(args[1:])
 
         if remaining:
             input_dir = Path(remaining[0])
@@ -528,40 +537,17 @@ def main():
             print(f"Not a directory: {input_dir}")
             return
 
-        # Ask image display mode if not set via flag
-        if not fullscreen:
-            choice = (
-                input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
-                .strip()
-                .lower()
-            )
-            if choice == "f":
-                fullscreen = True
-
-        serve(input_dir, port=port, image_mode="fullscreen" if fullscreen else "panel")
+        serve(input_dir, port=port, image_mode=_choose_image_mode(fullscreen))
         return
 
     # Check for 'show' subcommand — display GPS-tagged images without tracks
     if args and args[0] == "show":
         from .server import serve
 
-        show_args = args[1:]
-        port = 5000
-        fullscreen = "--fullscreen" in show_args
-        show_sequence_line = "--no-sequence-line" not in show_args
-        show_args = [a for a in show_args if a != "--fullscreen"]
-        show_args = [a for a in show_args if a != "--no-sequence-line"]
-        remaining = []
-        i = 0
-        while i < len(show_args):
-            if show_args[i] == "--port" and i + 1 < len(show_args):
-                port = int(show_args[i + 1])
-                i += 2
-            elif show_args[i].startswith("--"):
-                i += 1
-            else:
-                remaining.append(show_args[i])
-                i += 1
+        port, fullscreen, extra_flags, remaining = _parse_subcommand_port_and_flags(
+            args[1:], extra_flags=("--no-sequence-line",)
+        )
+        show_sequence_line = not extra_flags["--no-sequence-line"]
 
         if remaining:
             input_dir = Path(remaining[0])
@@ -583,19 +569,10 @@ def main():
         if not show_sequence_line:
             print("  Image sequence line disabled (--no-sequence-line).")
 
-        if not fullscreen:
-            choice = (
-                input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
-                .strip()
-                .lower()
-            )
-            if choice == "f":
-                fullscreen = True
-
         serve(
             input_dir,
             port=port,
-            image_mode="fullscreen" if fullscreen else "panel",
+            image_mode=_choose_image_mode(fullscreen),
             include_tracks=False,
             include_image_sequence_track=show_sequence_line,
         )
@@ -678,13 +655,7 @@ def main():
         from .server import serve
 
         print("\nLaunching 3D viewer...")
-        choice = (
-            input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
-            .strip()
-            .lower()
-        )
-        image_mode = "fullscreen" if choice == "f" else "panel"
-        serve(input_dir, image_mode=image_mode)
+        serve(input_dir, image_mode=_choose_image_mode(fullscreen=False))
 
 
 if __name__ == "__main__":

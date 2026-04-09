@@ -87,7 +87,7 @@ def parse_igc(path: Path) -> Track:
                         tzinfo=timezone.utc,
                     )
                     points.append(TrackPoint(time=time, lat=lat, lon=lon, alt=gps_alt))
-                except (ValueError, IndexError):
+                except ValueError, IndexError:
                     continue
 
     if not points:

@@ -23,8 +23,16 @@ packages = ["src/gpsimagestomap"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.3.0",
     "pytest>=8.4.2",
+    "ruff>=0.14.0",
 ]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

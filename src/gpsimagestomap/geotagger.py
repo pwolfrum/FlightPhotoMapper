@@ -62,7 +62,6 @@ def _decimal_to_dms(
     decimal: float,
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int]]:
     """Convert decimal degrees to (degrees, minutes, seconds) as piexif rational tuples."""
-    is_negative = decimal < 0
     decimal = abs(decimal)
     degrees = int(decimal)
     minutes_float = (decimal - degrees) * 60

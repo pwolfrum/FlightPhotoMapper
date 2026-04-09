@@ -22,18 +22,18 @@ THUMBNAIL_SIZE = (200, 200)
 
 
 def export(input_dir: Path, output_dir: Path) -> None:
-    """Export tracks + geotagged images to a static site folder.
+    """Export tracks + generated images to a static site folder.
 
     Creates:
         output_dir/
             index.html      – standalone Cesium viewer
-            images/          – full-size geotagged images
+            images/          – full-size generated images
             thumbnails/      – 200×200 JPEG thumbnails
     """
     _load_dotenv(Path.cwd())
 
-    geotagged_dir = get_dataset_images_dir(input_dir)
-    if not geotagged_dir.is_dir():
+    generated_images_dir = get_dataset_images_dir(input_dir)
+    if not generated_images_dir.is_dir():
         print(f"  No generated images folder found for {input_dir}")
         print("  Run the geotagging pipeline first.")
         return
@@ -60,10 +60,10 @@ def export(input_dir: Path, output_dir: Path) -> None:
             except ValueError:
                 pass
 
-    # Collect geotagged image metadata
+    # Collect generated image metadata
     images_data = []
     image_files: list[Path] = []
-    for p in sorted(geotagged_dir.iterdir()):
+    for p in sorted(generated_images_dir.iterdir()):
         if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
             coords = _read_gps_from_exif(p)
             if coords:

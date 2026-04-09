@@ -59,7 +59,7 @@ def _load_dotenv(directory: Path) -> None:
 
 
 def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
-    """Read GPS lat/lon/alt from a geotagged image's EXIF."""
+    """Read GPS lat/lon/alt from a generated image's EXIF."""
     try:
         import piexif
 
@@ -97,7 +97,7 @@ def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
                 alt = -alt
 
         return (lat, lon, alt)
-    except (KeyError, IndexError, ZeroDivisionError):
+    except KeyError, IndexError, ZeroDivisionError:
         return None
 
 
@@ -114,7 +114,7 @@ def create_app(
         static_folder=None,
     )
 
-    geotagged_dir = get_dataset_images_dir(input_dir)
+    generated_images_dir = get_dataset_images_dir(input_dir)
     thumbnail_cache: dict[str, bytes] = {}
 
     # Pre-load track data
@@ -141,11 +141,11 @@ def create_app(
                 except ValueError:
                     pass
 
-    # Pre-load geotagged image metadata
+    # Pre-load generated image metadata
     images_data = []
     image_sequence_points: list[dict[str, str | float]] = []
-    if geotagged_dir.is_dir():
-        for p in sorted(geotagged_dir.iterdir()):
+    if generated_images_dir.is_dir():
+        for p in sorted(generated_images_dir.iterdir()):
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
                 coords = _read_gps_from_exif(p)
                 if coords:
@@ -181,7 +181,8 @@ def create_app(
     )
     print(f"  Input dir: {input_dir}")
     print(
-        f"  Generated images dir: {geotagged_dir} ({'exists' if geotagged_dir.is_dir() else 'NOT FOUND'})"
+        "  Generated images dir: "
+        f"{generated_images_dir} ({'exists' if generated_images_dir.is_dir() else 'NOT FOUND'})"
     )
 
     @app.route("/")
@@ -211,7 +212,7 @@ def create_app(
         safe_name = Path(filename).name
         if safe_name != filename:
             abort(400)
-        file_path = geotagged_dir / safe_name
+        file_path = generated_images_dir / safe_name
         if not file_path.is_file():
             abort(404)
         return send_file(file_path)
@@ -225,7 +226,7 @@ def create_app(
         if safe_name in thumbnail_cache:
             return Response(thumbnail_cache[safe_name], mimetype="image/jpeg")
 
-        file_path = geotagged_dir / safe_name
+        file_path = generated_images_dir / safe_name
         if not file_path.is_file():
             abort(404)
 
@@ -252,6 +253,7 @@ def _kill_port(port: int) -> None:
         result = subprocess.run(
             ["netstat", "-ano", "-p", "TCP"],
             capture_output=True,
+            check=False,
             text=True,
         )
         killed = set()
@@ -268,13 +270,14 @@ def _kill_port(port: int) -> None:
                 continue
             try:
                 pid = int(parts[4])
-            except (ValueError, IndexError):
+            except ValueError, IndexError:
                 continue
             if pid == 0 or pid in killed:
                 continue
             subprocess.run(
                 ["taskkill", "/F", "/PID", str(pid)],
                 capture_output=True,
+                check=False,
             )
             killed.add(pid)
             print(f"  Killed previous server (PID {pid}) on port {port}")

@@ -1,6 +1,6 @@
 # GPSImagesToMap
 
-Geotag photos using GPS track files (IGC/GPX), then view the results on a 3D Cesium map. In default mode, only photos taken during the track recording will be shown. 
+Geotag photos using GPS track files (IGC/GPX), then view the results on a 3D Cesium map. In default mode, only photos taken during the track recording will be shown.
 A 'show' can be used to view photos which already have GPS tags without accompanying track files.
 
 ## Setup
