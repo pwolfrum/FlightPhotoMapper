@@ -1,11 +1,11 @@
 # AGENTS.md
 
 ## Purpose
-GPSImagesToMap geotags photos from GPS tracks (IGC/GPX) and visualizes them in a Cesium 3D viewer. It also supports view-only and static export workflows.
+FlightPhotoMapper geotags photos from GPS tracks (IGC/GPX) and visualizes them in a Cesium 3D viewer. It also supports view-only and static export workflows.
 
 ## Runtime Overview
-- Entry point: `src/gpsimagestomap/main.py` (installed script: `gpsimagestomap`)
-- Run via: `uv run gpsimagestomap [args]` or `uv run python -m gpsimagestomap [args]`
+- Entry point: `src/gpsimagestomap/main.py` (installed script: `flightphotomapper`)
+- Run via: `uv run flightphotomapper [args]` or `uv run python -m gpsimagestomap [args]`
 - Core flow in default mode:
   1. Discover tracks in selected input folder (`discover_tracks`)
   2. Discover images in the same folder (`discover_images`)
@@ -15,13 +15,13 @@ GPSImagesToMap geotags photos from GPS tracks (IGC/GPX) and visualizes them in a
   6. Launch Flask Cesium viewer (`server.serve`)
 
 ## CLI Modes
-- `gpsimagestomap [INPUT_DIR]`:
+- `flightphotomapper [INPUT_DIR]`:
   Geotag images, write output to `INPUT_DIR/geotagged/`, launch viewer.
-- `gpsimagestomap serve [INPUT_DIR] [--port N] [--fullscreen]`:
+- `flightphotomapper serve [INPUT_DIR] [--port N] [--fullscreen]`:
   View-only mode using track files from `INPUT_DIR` and geotagged images from `INPUT_DIR/geotagged/`.
-- `gpsimagestomap show [INPUT_DIR] [--port N] [--fullscreen]`:
+- `flightphotomapper show [INPUT_DIR] [--port N] [--fullscreen]`:
   Display images that already contain GPS EXIF; no tracks required.
-- `gpsimagestomap export [INPUT_DIR] [--output DIR] [--preview]`:
+- `flightphotomapper export [INPUT_DIR] [--output DIR] [--preview]`:
   Export static site with inline track/image metadata and copied image assets.
 
 ## Data Model
@@ -61,7 +61,7 @@ GPSImagesToMap geotags photos from GPS tracks (IGC/GPX) and visualizes them in a
 
 ## Development Workflow
 - Install deps: `uv sync`
-- Run app: `uv run gpsimagestomap <input-dir>` or `uv run python -m gpsimagestomap <input-dir>`
+- Run app: `uv run flightphotomapper <input-dir>` or `uv run python -m gpsimagestomap <input-dir>`
 - Run tests: `uv run --group dev pytest`
 
 ## Testing Strategy

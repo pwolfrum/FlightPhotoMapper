@@ -1,10 +1,13 @@
-"""GPSImagesToMap — Geotag images using GPS track files, then visualize on a 3D map."""
+"""FlightPhotoMapper — Geotag images using GPS track files, then visualize on a 3D map."""
 
+import io
 import shutil
 import tkinter as tk
+from contextlib import redirect_stdout
 from datetime import timedelta, timezone
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
+from typing import Any, TextIO, TypedDict, cast
 
 from PIL import Image
 from pillow_heif import register_heif_opener
@@ -15,6 +18,195 @@ from .geotagger import interpolate_position, write_gps_exif
 from .image_discovery import ImageInfo, discover_images
 from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, Track, parse_track_file
+
+
+class LauncherRequest(TypedDict):
+    mode: str
+    input_dir: Path
+    port: int
+    image_mode: str
+    time_offset_minutes: float
+    include_sequence_line: bool
+    output_dir: Path | None
+    do_preview: bool
+
+
+class _TeeTextStream:
+    """Write text to a capture buffer and any available live stream."""
+
+    def __init__(self, *streams: TextIO | None):
+        self.streams = [stream for stream in streams if stream is not None]
+
+    def write(self, text: str) -> int:
+        for stream in self.streams:
+            stream.write(text)
+        return len(text)
+
+    def flush(self) -> None:
+        for stream in self.streams:
+            stream.flush()
+
+
+def _capture_stdout(func, *args, **kwargs) -> tuple[Any, str]:
+    """Run a function while capturing stdout for GUI display."""
+    import sys
+
+    buffer = io.StringIO()
+    tee = _TeeTextStream(getattr(sys, "stdout", None), buffer)
+    with redirect_stdout(tee):
+        result = func(*args, **kwargs)
+    return result, buffer.getvalue()
+
+
+def _gui_session_log(base_log: str, tail_lines: list[str] | None = None) -> str:
+    """Compose a readable session log for the GUI control window."""
+    sections = []
+    stripped = base_log.strip()
+    if stripped:
+        sections.append(stripped)
+    if tail_lines:
+        sections.append("\n".join(line for line in tail_lines if line))
+    return "\n\n".join(sections)
+
+
+def _run_gui_request(request: LauncherRequest) -> None:
+    """Execute a launcher request with GUI-visible status windows."""
+    input_dir = request["input_dir"]
+    mode = request["mode"]
+
+    if mode == "geotag":
+        if not _is_valid_directory(input_dir):
+            return
+
+        success, session_log = _capture_stdout(
+            geotag,
+            input_dir,
+            time_offset_minutes=request["time_offset_minutes"],
+        )
+        if not success:
+            return
+
+        from .server import serve
+
+        serve(
+            input_dir,
+            port=request["port"],
+            image_mode=request["image_mode"],
+            show_control_window=True,
+            session_log=_gui_session_log(
+                session_log,
+                [
+                    "Launching 3D viewer...",
+                    "Close the viewer control window to stop the application.",
+                ],
+            ),
+        )
+        return
+
+    if mode == "review":
+        if not _is_valid_directory(input_dir):
+            return
+
+        from .server import serve
+
+        serve(
+            input_dir,
+            port=request["port"],
+            image_mode=request["image_mode"],
+            show_control_window=True,
+            session_log=_gui_session_log(
+                "",
+                [
+                    f"Reviewing generated results for {input_dir.name}.",
+                    "Close the viewer control window to stop the application.",
+                ],
+            ),
+        )
+        return
+
+    if mode == "browse":
+        if not _is_valid_directory(input_dir):
+            return
+
+        prepared, session_log = _capture_stdout(_prepare_gps_images, input_dir)
+        if not prepared:
+            return
+
+        if not request["include_sequence_line"]:
+            session_log = _gui_session_log(
+                session_log,
+                ["Image sequence line disabled (--no-sequence-line)."],
+            )
+
+        from .server import serve
+
+        serve(
+            input_dir,
+            port=request["port"],
+            image_mode=request["image_mode"],
+            include_tracks=False,
+            include_image_sequence_track=request["include_sequence_line"],
+            show_control_window=True,
+            session_log=_gui_session_log(
+                session_log,
+                [
+                    "Launching 3D viewer...",
+                    "Close the viewer control window to stop the application.",
+                ],
+            ),
+        )
+        return
+
+    if mode == "export":
+        orchestrate_export_mode(
+            input_dir,
+            output_dir=request["output_dir"],
+            do_preview=request["do_preview"],
+        )
+        return
+
+    raise ValueError(f"Unknown launcher mode: {mode}")
+
+
+def _stdin_available() -> bool:
+    """Return True when interactive stdin is available for input prompts."""
+    import sys
+
+    stream = getattr(sys, "stdin", None)
+    if stream is None:
+        return False
+    try:
+        return (not stream.closed) and stream.isatty()
+    except (AttributeError, RuntimeError, ValueError):
+        return False
+
+
+def _ask_timezone_correction_gui(
+    hours: int, current: int, corrected: int
+) -> bool | None:
+    """Ask timezone correction in GUI mode when stdin is unavailable.
+
+    Returns:
+    - True to apply correction
+    - False to continue without applying
+    - None when user cancels
+    """
+    sign = "+" if hours > 0 else ""
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        return messagebox.askyesnocancel(
+            "Timezone uncertainty detected",
+            (
+                "Some images have no timezone info in EXIF.\n\n"
+                f"Currently matched within tracks: {current}\n"
+                f"Applying a {sign}{hours}h correction would place {corrected} within a track.\n\n"
+                f"Apply {sign}{hours}h correction?\n"
+                "Yes = apply, No = continue without correction, Cancel = stop."
+            ),
+        )
+    finally:
+        root.destroy()
 
 
 def _align_time_for_comparison(reference_time, candidate_time):
@@ -106,6 +298,9 @@ def _choose_image_mode(fullscreen: bool) -> str:
     """Return chosen image mode, asking interactively when needed."""
     if fullscreen:
         return "fullscreen"
+
+    if not _stdin_available():
+        return "panel"
 
     choice = (
         input("Image display: [p]anel (resizable, default) or [f]ullscreen? ")
@@ -275,22 +470,28 @@ def handle_timezone_uncertainty(
     print(f"  that is {sign}{hours}h relative to UTC.")
     print(f"{'=' * 60}\n")
 
-    while True:
-        choice = (
-            input(f"Apply {sign}{hours}h correction? [y]es / [n]o / [q]uit: ")
-            .strip()
-            .lower()
-        )
-        if choice == "y":
-            apply = True
-            break
-        elif choice == "n":
-            apply = False
-            break
-        elif choice == "q":
+    if _stdin_available():
+        while True:
+            choice = (
+                input(f"Apply {sign}{hours}h correction? [y]es / [n]o / [q]uit: ")
+                .strip()
+                .lower()
+            )
+            if choice == "y":
+                apply = True
+                break
+            elif choice == "n":
+                apply = False
+                break
+            elif choice == "q":
+                raise SystemExit(0)
+            else:
+                print("Please enter 'y', 'n', or 'q'.")
+    else:
+        gui_choice = _ask_timezone_correction_gui(hours, current, corrected)
+        if gui_choice is None:
             raise SystemExit(0)
-        else:
-            print("Please enter 'y', 'n', or 'q'.")
+        apply = bool(gui_choice)
 
     if not apply:
         return images
@@ -606,7 +807,7 @@ def main():
             return
 
         try:
-            request = run_launcher()
+            request = cast(LauncherRequest | None, run_launcher())
         except tk.TclError as e:
             print(f"Failed to open launcher GUI: {e}")
             return
@@ -615,42 +816,8 @@ def main():
             print("No action selected. Exiting.")
             return
 
-        mode = request["mode"]
-        input_dir = request["input_dir"]
-
-        if mode == "geotag":
-            orchestrate_geotag_mode(
-                input_dir,
-                time_offset_minutes=request["time_offset_minutes"],
-                port=request["port"],
-                image_mode=request["image_mode"],
-            )
-            return
-
-        if mode == "review":
-            orchestrate_review_mode(
-                input_dir,
-                port=request["port"],
-                image_mode=request["image_mode"],
-            )
-            return
-
-        if mode == "browse":
-            orchestrate_browse_mode(
-                input_dir,
-                port=request["port"],
-                image_mode=request["image_mode"],
-                include_sequence_line=request["include_sequence_line"],
-            )
-            return
-
-        if mode == "export":
-            orchestrate_export_mode(
-                input_dir,
-                output_dir=request["output_dir"],
-                do_preview=request["do_preview"],
-            )
-            return
+        _run_gui_request(request)
+        return
 
     # Check for 'serve' subcommand
     if args and args[0] == "serve":

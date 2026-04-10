@@ -1,5 +1,5 @@
 [project]
-name = "gpsimagestomap"
+name = "flightphotomapper"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.14"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gpsimagestomap = "gpsimagestomap.main:main"
+flightphotomapper = "gpsimagestomap.main:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -23,6 +23,7 @@ packages = ["src/gpsimagestomap"]
 
 [dependency-groups]
 dev = [
+    "pyinstaller>=6.0.0",
     "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "ruff>=0.14.0",

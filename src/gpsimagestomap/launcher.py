@@ -99,9 +99,9 @@ def _row(frame: tk.Widget, row: int, label_text: str) -> ttk.Label:
 def run_launcher() -> dict | None:
     """Show launcher GUI and return a normalized run request or None."""
     root = tk.Tk()
-    root.title("GPSImagesToMap Launcher")
+    root.title("FlightPhotoMapper Launcher")
     root.geometry("640x520")
-    root.minsize(640, 520)
+    root.minsize(420, 260)
 
     request: dict | None = None
     load_app_env(Path.cwd())
@@ -115,8 +115,35 @@ def run_launcher() -> dict | None:
     output_dir_var = tk.StringVar(value="")
     do_preview_var = tk.BooleanVar(value=False)
 
-    container = ttk.Frame(root, padding=12)
-    container.pack(fill="both", expand=True)
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+
+    viewport = ttk.Frame(root, padding=12)
+    viewport.grid(row=0, column=0, sticky="nsew")
+    viewport.columnconfigure(0, weight=1)
+    viewport.rowconfigure(0, weight=1)
+
+    canvas = tk.Canvas(viewport, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+
+    container = ttk.Frame(canvas)
+    container_id = canvas.create_window((0, 0), window=container, anchor="nw")
+
+    def _sync_scroll_region(_event=None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def _sync_container_width(event) -> None:
+        canvas.itemconfigure(container_id, width=event.width)
+
+    container.bind("<Configure>", _sync_scroll_region)
+    canvas.bind("<Configure>", _sync_container_width)
+
+    footer = ttk.Frame(root, padding=(12, 0, 12, 12))
+    footer.grid(row=1, column=0, sticky="ew")
 
     header_row = ttk.Frame(container)
     header_row.pack(fill="x")
@@ -132,6 +159,73 @@ def run_launcher() -> dict | None:
             token_status_var.set("Cesium token: configured")
         else:
             token_status_var.set("Cesium token: missing (terrain disabled)")
+
+    def open_about_dialog() -> None:
+        dialog = tk.Toplevel(root)
+        dialog.title("About FlightPhotoMapper")
+        dialog.transient(root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(
+            body,
+            text="FlightPhotoMapper",
+            font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w")
+
+        ttk.Label(
+            body,
+            text=(
+                "Geotag photos to GPS tracks (IGC/GPX), then view them\n"
+                "in a Cesium 3D map viewer."
+            ),
+            justify="left",
+        ).pack(anchor="w", pady=(6, 8))
+
+        ttk.Label(
+            body,
+            text=(
+                "Author: Philipp Wolfrum\n"
+                "License: MIT (see LICENSE file)\n"
+                "Acknowledgements: Flask, Pillow, pillow-heif, piexif, gpxpy, CesiumJS"
+            ),
+            justify="left",
+            foreground="#444444",
+        ).pack(anchor="w")
+
+        links = ttk.Frame(body)
+        links.pack(fill="x", pady=(10, 0))
+
+        github_link = tk.Label(
+            links,
+            text="Project page: github.com/pwolfrum/FlightPhotoMapper",
+            fg="#0a58ca",
+            cursor="hand2",
+        )
+        github_link.pack(anchor="w")
+        github_link.bind(
+            "<Button-1>",
+            lambda _e: webbrowser.open("https://github.com/pwolfrum/FlightPhotoMapper"),
+        )
+
+        token_link = tk.Label(
+            links,
+            text="Cesium page: ion.cesium.com",
+            fg="#0a58ca",
+            cursor="hand2",
+        )
+        token_link.pack(anchor="w", pady=(2, 0))
+        token_link.bind(
+            "<Button-1>",
+            lambda _e: webbrowser.open("https://ion.cesium.com"),
+        )
+
+        ttk.Button(body, text="Close", command=dialog.destroy).pack(
+            anchor="e", pady=(12, 0)
+        )
 
     def open_setup_dialog() -> None:
         dialog = tk.Toplevel(root)
@@ -210,7 +304,14 @@ def run_launcher() -> dict | None:
             justify="left",
         ).pack(anchor="w", pady=(8, 0))
 
-    ttk.Button(header_row, text="Setup", command=open_setup_dialog).pack(side="right")
+    header_actions = ttk.Frame(header_row)
+    header_actions.pack(side="right")
+    ttk.Button(header_actions, text="About", command=open_about_dialog).pack(
+        side="right"
+    )
+    ttk.Button(header_actions, text="Setup", command=open_setup_dialog).pack(
+        side="right", padx=(0, 8)
+    )
 
     ttk.Label(
         container,
@@ -364,7 +465,7 @@ def run_launcher() -> dict | None:
     mode_var.trace_add("write", render_options)
     render_options()
 
-    button_row = ttk.Frame(container)
+    button_row = ttk.Frame(footer)
     button_row.pack(fill="x", pady=(10, 0))
 
     def cancel():

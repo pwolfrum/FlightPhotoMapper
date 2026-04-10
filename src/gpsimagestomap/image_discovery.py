@@ -53,7 +53,7 @@ def _parse_exif_datetime(
                 timedelta(hours=sign * offset_hours, minutes=sign * offset_minutes)
             )
             dt = dt.replace(tzinfo=tz).astimezone(timezone.utc)
-        except ValueError, IndexError:
+        except (ValueError, IndexError):
             pass
 
     return dt

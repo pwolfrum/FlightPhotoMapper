@@ -2,14 +2,18 @@
 
 import json
 import os
+import threading
+import tkinter as tk
 import webbrowser
 from datetime import timezone
 from io import BytesIO
 from pathlib import Path
+from tkinter import scrolledtext, ttk
 
 from flask import Flask, Response, abort, send_file
 from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
+from werkzeug.serving import make_server
 
 register_heif_opener()
 
@@ -19,6 +23,17 @@ from .storage import get_dataset_images_dir
 from .track_parser import TRACK_EXTENSIONS, parse_track_file
 
 THUMBNAIL_SIZE = (200, 200)
+
+
+def _open_url(url: str) -> None:
+    """Open a URL with minimal UI artifacts on Windows."""
+    if os.name == "nt":
+        try:
+            os.startfile(url)
+            return
+        except OSError:
+            pass
+    webbrowser.open(url)
 
 
 def _build_image_sequence_track(
@@ -78,7 +93,7 @@ def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
                 alt = -alt
 
         return (lat, lon, alt)
-    except KeyError, IndexError, ZeroDivisionError:
+    except (KeyError, IndexError, ZeroDivisionError):
         return None
 
 
@@ -229,14 +244,28 @@ def _kill_port(port: int) -> None:
     """Kill any process currently listening on the given port (Windows)."""
     import subprocess
 
-    try:
-        # Use netstat but match on port + PID column regardless of locale
-        result = subprocess.run(
-            ["netstat", "-ano", "-p", "TCP"],
+    create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    startupinfo = None
+    if hasattr(subprocess, "STARTUPINFO") and hasattr(
+        subprocess, "STARTF_USESHOWWINDOW"
+    ):
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+
+    def _run_hidden(cmd: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            cmd,
             capture_output=True,
             check=False,
             text=True,
+            creationflags=create_no_window,
+            startupinfo=startupinfo,
         )
+
+    try:
+        # Use netstat but match on port + PID column regardless of locale
+        result = _run_hidden(["netstat", "-ano", "-p", "TCP"])
         killed = set()
         for line in result.stdout.splitlines():
             # Match lines with our port in a local address column
@@ -251,19 +280,75 @@ def _kill_port(port: int) -> None:
                 continue
             try:
                 pid = int(parts[4])
-            except ValueError, IndexError:
+            except (ValueError, IndexError):
                 continue
             if pid == 0 or pid in killed:
                 continue
-            subprocess.run(
-                ["taskkill", "/F", "/PID", str(pid)],
-                capture_output=True,
-                check=False,
-            )
+            _run_hidden(["taskkill", "/F", "/PID", str(pid)])
             killed.add(pid)
             print(f"  Killed previous server (PID {pid}) on port {port}")
     except Exception:
         pass
+
+
+def _show_viewer_control_window(url: str, stop_server, session_log: str) -> None:
+    """Show a small control window for GUI-launched viewer sessions."""
+    root = tk.Tk()
+    root.title("FlightPhotoMapper Viewer")
+    root.geometry("760x500")
+    root.minsize(520, 320)
+    root.update_idletasks()
+    root.lift()
+    # Temporarily force topmost to reliably appear above the browser window.
+    root.attributes("-topmost", True)
+    root.after(200, lambda: root.attributes("-topmost", False))
+    root.after(220, root.focus_force)
+
+    container = ttk.Frame(root, padding=12)
+    container.pack(fill="both", expand=True)
+
+    ttk.Label(
+        container,
+        text="Viewer is running",
+        font=("Segoe UI", 12, "bold"),
+    ).pack(anchor="w")
+    ttk.Label(
+        container,
+        text=(
+            f"Map URL: {url}\n"
+            "You can leave the browser open. Close this window to stop the local server and exit the application."
+        ),
+        justify="left",
+        wraplength=700,
+    ).pack(anchor="w", pady=(6, 10))
+
+    log_box = scrolledtext.ScrolledText(container, wrap="word", height=18)
+    log_box.pack(fill="both", expand=True)
+    log_box.insert("1.0", session_log.strip() or "Viewer started.")
+    log_box.configure(state="disabled")
+
+    button_row = ttk.Frame(container)
+    button_row.pack(fill="x", pady=(10, 0))
+
+    stopped = False
+
+    def stop_and_close() -> None:
+        nonlocal stopped
+        if stopped:
+            return
+        stopped = True
+        stop_server()
+        root.destroy()
+
+    ttk.Button(button_row, text="Open map again", command=lambda: _open_url(url)).pack(
+        side="left"
+    )
+    ttk.Button(button_row, text="Stop viewer", command=stop_and_close).pack(
+        side="right"
+    )
+
+    root.protocol("WM_DELETE_WINDOW", stop_and_close)
+    root.mainloop()
 
 
 def serve(
@@ -272,6 +357,8 @@ def serve(
     image_mode: str = "panel",
     include_tracks: bool = True,
     include_image_sequence_track: bool = True,
+    show_control_window: bool = False,
+    session_log: str = "",
 ) -> None:
     """Start the Flask server and open the browser."""
     load_app_env(Path.cwd())
@@ -290,7 +377,33 @@ def serve(
         print("  Without it, the viewer will use a flat globe.\n")
 
     url = f"http://localhost:{port}"
+    if show_control_window:
+        note_lines = [f"Starting viewer at {url}"]
+        if not token:
+            note_lines.extend(
+                [
+                    "NOTE: No Cesium token configured, so the viewer will use a flat globe.",
+                    "Use Setup in the launcher to store a token for future sessions.",
+                ]
+            )
+        combined_log = "\n\n".join(
+            part for part in [session_log.strip(), "\n".join(note_lines)] if part
+        )
+
+        httpd = make_server("127.0.0.1", port, app, threaded=True)
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        server_thread.start()
+        _open_url(url)
+
+        def stop_server() -> None:
+            httpd.shutdown()
+            httpd.server_close()
+            server_thread.join(timeout=2)
+
+        _show_viewer_control_window(url, stop_server, combined_log)
+        return
+
     print(f"  Starting viewer at {url}")
     print("  Press Ctrl+C to stop.\n")
-    webbrowser.open(url)
+    _open_url(url)
     app.run(host="127.0.0.1", port=port, debug=False)

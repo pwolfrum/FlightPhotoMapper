@@ -1,7 +1,19 @@
-# GPSImagesToMap
+# FlightPhotoMapper
 
-Geotag photos using GPS track files (IGC/GPX), then view the results on a 3D Cesium map. In default mode, only photos taken during the track recording will be shown.
-A 'show' can be used to view photos which already have GPS tags without accompanying track files.
+## About
+
+FlightPhotoMapper geotags photos to flight/activity tracks (IGC/GPX) and visualizes both in a Cesium 3D map viewer.
+
+Main capabilities:
+- Match photo timestamps to recorded track points
+- Write interpolated GPS EXIF coordinates into images
+- Render tracks and photos in a Cesium 3D map viewer
+- Review previously processed trips (to save processing time)
+- Browse already geotagged photos without the need for gps tracks (e.g. for vacation pictures)
+- Export a static shareable web viewer
+
+Author: Philipp Wolfrum
+
 
 ## Setup
 
@@ -11,16 +23,38 @@ Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
-This installs the package in editable mode and registers the `gpsimagestomap` command.
+This installs the package in editable mode and registers the `flightphotomapper` command.
 
 For 3D terrain in the viewer, configure a free [Cesium ion](https://ion.cesium.com/tokens) token:
 
-- Launcher users: click Setup in the GUI; the token is saved to `%LOCALAPPDATA%/GPSImagesToMap/config/.env`
+- Launcher users: click Setup in the GUI; the token is saved to `%LOCALAPPDATA%/FlightPhotoMapper/config/.env`
 - Developer/manual workflow: you can still create a project `.env` file
 
 ```
 CESIUM_ION_TOKEN="your_token_here"
 ```
+
+## Windows standalone executable
+
+Build a one-folder Windows executable:
+
+```
+scripts\build_exe.bat
+```
+
+Successful output is:
+
+```
+dist\flightphotomapper\flightphotomapper.exe
+```
+
+For distribution to non-technical users:
+
+1. Zip the folder `dist\flightphotomapper\`
+2. Upload that zip to a GitHub Release
+3. Users download zip, extract, and run `flightphotomapper.exe`
+
+One-folder mode is intentional; startup is faster and more reliable than one-file mode.
 
 ## Folder structure
 
@@ -38,7 +72,7 @@ The tool only reads track files and images directly in the folder you select; it
 
 Generated images are stored in an app-managed working directory, not inside your trip folder.
 
-- Default on Windows: `%LOCALAPPDATA%/GPSImagesToMap/work/`
+- Default on Windows: `%LOCALAPPDATA%/FlightPhotoMapper/work/`
 - Optional override: set `GPSIMAGES_WORK_DIR` to a custom location
 
 Within that work root, each input folder gets its own stable dataset subfolder.
@@ -50,7 +84,7 @@ Within that work root, each input folder gets its own stable dataset subfolder.
 Run without arguments to open the launcher GUI:
 
 ```
-uv run gpsimagestomap
+uv run flightphotomapper
 ```
 
 Modes in the launcher:
@@ -67,7 +101,7 @@ All existing CLI commands remain available and are documented below.
 Place track files and photos in a folder, then run:
 
 ```
-uv run gpsimagestomap path/to/my-trip
+uv run flightphotomapper path/to/my-trip
 ```
 
 This will:
@@ -80,7 +114,7 @@ This will:
 Omit the path to get a folder picker dialog:
 
 ```
-uv run gpsimagestomap
+uv run flightphotomapper
 ```
 
 #### Geotag behavior notes
@@ -95,14 +129,14 @@ uv run gpsimagestomap
 To view results from a previous run without re-geotagging, pass the same source folder you used for geotagging:
 
 ```
-uv run gpsimagestomap serve path/to/my-trip
-uv run gpsimagestomap serve path/to/my-trip --port 8080
+uv run flightphotomapper serve path/to/my-trip
+uv run flightphotomapper serve path/to/my-trip --port 8080
 ```
 
 Or omit the path for a folder picker:
 
 ```
-uv run gpsimagestomap serve
+uv run flightphotomapper serve
 ```
 
 ### Options
@@ -124,7 +158,7 @@ uv run gpsimagestomap serve
 If photos appear at the wrong position along the track, the camera clock was likely off by a few minutes. Use `--time-offset` to correct this:
 
 ```
-uv run gpsimagestomap path/to/my-trip --time-offset -13
+uv run flightphotomapper path/to/my-trip --time-offset -13
 ```
 
 A **negative** value shifts images earlier (camera was ahead), **positive** shifts later (camera was behind). Each run overwrites the previous generated output for that dataset, so you can quickly iterate to find the right value.
@@ -134,14 +168,14 @@ A **negative** value shifts images earlier (camera was ahead), **positive** shif
 Display images that already have GPS coordinates in their EXIF on the 3D map — no track files needed:
 
 ```
-uv run gpsimagestomap show path/to/photos
-uv run gpsimagestomap show
+uv run flightphotomapper show path/to/photos
+uv run flightphotomapper show
 ```
 
 Disable the temporal connecting line in show mode:
 
 ```
-uv run gpsimagestomap show path/to/photos --no-sequence-line
+uv run flightphotomapper show path/to/photos --no-sequence-line
 ```
 
 Images without GPS tags are listed but skipped. HEIC/HEIF files are automatically converted to JPEG for browser compatibility.
@@ -151,8 +185,8 @@ Images without GPS tags are listed but skipped. HEIC/HEIF files are automaticall
 Generate a self-contained HTML site that can be hosted anywhere (GitHub Pages, Netlify, etc.):
 
 ```
-uv run gpsimagestomap export path/to/my-trip
-uv run gpsimagestomap export path/to/my-trip --output path/to/output
+uv run flightphotomapper export path/to/my-trip
+uv run flightphotomapper export path/to/my-trip --output path/to/output
 ```
 
 This creates an output folder (defaults to `path/to/my-trip/export/`) with:
@@ -167,14 +201,14 @@ export/
 To preview the export locally:
 
 ```
-uv run gpsimagestomap export path/to/my-trip --preview
+  uv run flightphotomapper export path/to/my-trip --preview
 ```
 
 ### Hosting on GitHub Pages
 
 1. Export the static site:
    ```
-   uv run gpsimagestomap export path/to/my-trip --output docs
+  uv run flightphotomapper export path/to/my-trip --output docs
    ```
 
 2. Push the `docs/` folder to your repository.
@@ -189,3 +223,22 @@ uv run gpsimagestomap export path/to/my-trip --preview
 
 - **Tracks:** IGC, GPX
 - **Images:** JPEG, HEIC/HEIF, TIFF, PNG (all non-JPEG inputs are saved as JPEG in the app-managed work directory)
+
+
+## Acknowledgements
+
+This project uses and depends on several excellent open-source libraries and services, including:
+
+- Flask (web server)
+- Pillow and pillow-heif (image processing and HEIC support)
+- piexif (EXIF read/write)
+- gpxpy (GPX parsing)
+- CesiumJS / Cesium ion (3D globe and terrain)
+
+For redistributed builds, please keep all third-party license notices required by dependencies.
+
+## License
+
+This project is licensed under the MIT License.
+
+See [LICENSE](LICENSE) for the full text.

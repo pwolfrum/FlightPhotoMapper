@@ -20,10 +20,10 @@ def get_work_root() -> Path:
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / "GPSImagesToMap" / "work"
+        return Path(local_app_data) / "FlightPhotoMapper" / "work"
 
     # Fallback for non-Windows environments running tests.
-    return Path.home() / ".gpsimagestomap" / "work"
+    return Path.home() / ".flightphotomapper" / "work"
 
 
 def get_dataset_images_dir(input_dir: Path) -> Path:

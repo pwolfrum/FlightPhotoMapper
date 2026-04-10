@@ -8,9 +8,9 @@ def get_user_config_dir() -> Path:
     """Return the per-user configuration directory."""
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / "GPSImagesToMap" / "config"
+        return Path(local_app_data) / "FlightPhotoMapper" / "config"
 
-    return Path.home() / ".gpsimagestomap" / "config"
+    return Path.home() / ".flightphotomapper" / "config"
 
 
 def get_user_env_path() -> Path:
