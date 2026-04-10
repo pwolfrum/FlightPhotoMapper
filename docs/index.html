@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>20250531_BrauneckBischling</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; font-family: sans-serif; }
+        #cesiumContainer { width: 100%; height: 100%; }
+
+        #imagePanel {
+            display: none;
+            position: absolute;
+            top: 40px;
+            left: 20px;
+            background: rgba(20, 20, 30, 0.92);
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 12px;
+            width: 720px;
+            max-width: calc(100vw - 40px);
+            max-height: calc(100vh - 80px);
+            min-width: 320px;
+            min-height: 220px;
+            z-index: 1000;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+            overflow: auto;
+        }
+        #imagePanel .panel-stage {
+            position: relative;
+        }
+        #imagePanel img {
+            max-width: 100%;
+            max-height: calc(100vh - 180px);
+            border-radius: 4px;
+            display: block;
+            margin: 0 auto;
+        }
+        #imagePanel .panel-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+            cursor: move;
+            user-select: none;
+        }
+        #imagePanel .panel-actions {
+            display: flex;
+            gap: 8px;
+        }
+        #imagePanel .panel-toolbar button {
+            color: #ccc;
+            font-size: 16px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            line-height: 1;
+            padding: 2px 6px;
+        }
+        #imagePanel .panel-toolbar button:hover { color: #fff; }
+        #imagePanel .panel-toolbar button:disabled,
+        #imagePanel .image-nav button:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+        #imagePanel .image-nav {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            transform: translateY(-50%);
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+        #imagePanel .image-nav button {
+            pointer-events: auto;
+            background: rgba(20, 20, 30, 0.75);
+            border: 1px solid #666;
+            color: #fff;
+            width: 36px;
+            height: 36px;
+            border-radius: 999px;
+            cursor: pointer;
+            margin: 0 8px;
+            font-size: 20px;
+            line-height: 1;
+        }
+        #imagePanel .img-label {
+            color: #ccc;
+            font-size: 12px;
+            margin-top: 6px;
+            text-align: center;
+        }
+        #imagePanel .resize-handle {
+            position: absolute;
+            right: 6px;
+            bottom: 6px;
+            width: 18px;
+            height: 18px;
+            cursor: nwse-resize;
+            opacity: 0.7;
+        }
+        #imagePanel .resize-handle::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(135deg, transparent 0 50%, #888 50% 58%, transparent 58% 100%),
+                linear-gradient(135deg, transparent 0 68%, #aaa 68% 76%, transparent 76% 100%),
+                linear-gradient(135deg, transparent 0 86%, #ccc 86% 94%, transparent 94% 100%);
+        }
+
+        #imagePanel.fullscreen {
+            top: 0;
+            left: 0;
+            right: 0;
+            max-width: 100vw;
+            max-height: 100vh;
+            width: 100vw;
+            height: 100vh;
+            border-radius: 0;
+        }
+        #imagePanel.fullscreen img {
+            max-width: calc(100vw - 40px);
+            max-height: calc(100vh - 80px);
+            margin: 0 auto;
+        }
+        #imagePanel.fullscreen .resize-handle {
+            display: none;
+        }
+
+        #legend {
+            position: absolute;
+            bottom: 40px;
+            left: 20px;
+            background: rgba(20, 20, 30, 0.85);
+            color: #ddd;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            z-index: 500;
+        }
+        #legend .track-item { margin-bottom: 4px; }
+        #legend .dot {
+            display: inline-block;
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+
+    <div id="imagePanel">
+        <div class="panel-toolbar">
+            <div class="panel-actions">
+                <button onclick="toggleFullscreen()" title="Toggle fullscreen">⛶</button>
+                <button onclick="closeImagePanel()" title="Close">&times;</button>
+            </div>
+        </div>
+        <div class="panel-stage">
+            <img id="panelImage" src="" alt="">
+            <div class="image-nav">
+                <button id="prevImageOverlayBtn" onclick="showPreviousImage()" title="Previous image">‹</button>
+                <button id="nextImageOverlayBtn" onclick="showNextImage()" title="Next image">›</button>
+            </div>
+        </div>
+        <div class="img-label" id="panelLabel"></div>
+        <div class="resize-handle" id="resizeHandle" title="Resize panel"></div>
+    </div>
+
+    <div id="legend"></div>
+
+    <script>
+        // --- Inline data (embedded at export time) ---
+        const CESIUM_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI4ZTY1NmYzNC1hNjBhLTRjZmQtYTE2ZS1lODdmZTBkODdmN2YiLCJpZCI6NDEyOTEyLCJpYXQiOjE3NzUxNDAwMzB9.qdKKON-ar8UUHoPk1D0G6F63KjXjkVESi4FM7fzCjFs';
+        const TRACKS = [];
+        const IMAGES = [{"filename": "IMG_1470.JPG", "lat": 47.64333333333333, "lon": 11.496633333333332, "alt": 3131.0}, {"filename": "IMG_1471.JPG", "lat": 47.643166666666666, "lon": 11.495783333333332, "alt": 3133.0}, {"filename": "IMG_1472.JPG", "lat": 47.65513333333333, "lon": 11.721483333333333, "alt": 3122.0}, {"filename": "IMG_1473.JPG", "lat": 47.65506666666666, "lon": 11.722483333333333, "alt": 3118.0}, {"filename": "IMG_1474.JPG", "lat": 47.65503333333333, "lon": 11.7235, "alt": 3106.0}, {"filename": "IMG_1475.JPG", "lat": 47.65495, "lon": 11.724283333333334, "alt": 3100.0}, {"filename": "IMG_1476.JPG", "lat": 47.66805, "lon": 11.863616666666667, "alt": 2449.0}, {"filename": "IMG_1477.JPG", "lat": 47.66828333333333, "lon": 11.86445, "alt": 2437.0}, {"filename": "IMG_1478.JPG", "lat": 47.66853333333333, "lon": 11.865766666666666, "alt": 2425.0}, {"filename": "IMG_1479.JPG", "lat": 47.66858333333333, "lon": 11.866566666666666, "alt": 2417.0}, {"filename": "IMG_1480.JPG", "lat": 47.66858333333333, "lon": 11.867333333333335, "alt": 2410.0}, {"filename": "IMG_1481.JPG", "lat": 47.6238, "lon": 12.11125, "alt": 2438.0}, {"filename": "IMG_1482.JPG", "lat": 47.62371666666667, "lon": 12.111933333333333, "alt": 2432.0}, {"filename": "IMG_1483.JPG", "lat": 47.62363333333333, "lon": 12.112499999999999, "alt": 2426.0}, {"filename": "IMG_1484.JPG", "lat": 47.62348333333333, "lon": 12.113333333333333, "alt": 2419.0}, {"filename": "IMG_1485.JPG", "lat": 47.6231, "lon": 12.114533333333332, "alt": 2405.0}, {"filename": "IMG_1486.JPG", "lat": 47.62291666666667, "lon": 12.115166666666667, "alt": 2399.0}, {"filename": "IMG_1487.JPG", "lat": 47.62093333333333, "lon": 12.137016666666666, "alt": 2259.0}, {"filename": "IMG_1488.JPG", "lat": 47.620533333333334, "lon": 12.138449999999999, "alt": 2242.0}, {"filename": "IMG_1489.JPG", "lat": 47.62035, "lon": 12.139149999999999, "alt": 2231.0}, {"filename": "IMG_1490.JPG", "lat": 47.62025, "lon": 12.13975, "alt": 2225.0}, {"filename": "IMG_1491.JPG", "lat": 47.6185, "lon": 12.155066666666666, "alt": 2074.0}, {"filename": "IMG_1492.JPG", "lat": 47.6166, "lon": 12.164483333333333, "alt": 2004.0}, {"filename": "IMG_1493.JPG", "lat": 47.61638333333333, "lon": 12.165933333333333, "alt": 1991.0}, {"filename": "IMG_1494.JPG", "lat": 47.6122, "lon": 12.19305, "alt": 1657.0}, {"filename": "IMG_1495.JPG", "lat": 47.6121, "lon": 12.193433333333333, "alt": 1651.0}, {"filename": "IMG_1496.JPG", "lat": 47.60608333333334, "lon": 12.32905, "alt": 2639.0}, {"filename": "IMG_1497.JPG", "lat": 47.606183333333334, "lon": 12.3298, "alt": 2634.0}, {"filename": "IMG_1498.JPG", "lat": 47.606233333333336, "lon": 12.33035, "alt": 2626.0}, {"filename": "IMG_1499.JPG", "lat": 47.606366666666666, "lon": 12.331666666666667, "alt": 2612.0}, {"filename": "IMG_1500.JPG", "lat": 47.607816666666665, "lon": 12.350316666666666, "alt": 2475.0}, {"filename": "IMG_1501.JPG", "lat": 47.60801666666667, "lon": 12.350816666666667, "alt": 2470.0}, {"filename": "IMG_1502.JPG", "lat": 47.61436666666667, "lon": 12.367066666666668, "alt": 2395.0}, {"filename": "IMG_1503.JPG", "lat": 47.62235, "lon": 12.449333333333334, "alt": 2600.0}, {"filename": "IMG_1504.JPG", "lat": 47.622166666666665, "lon": 12.450083333333332, "alt": 2601.0}, {"filename": "IMG_1505.JPG", "lat": 47.622033333333334, "lon": 12.450483333333333, "alt": 2592.0}, {"filename": "IMG_1506.JPG", "lat": 47.597033333333336, "lon": 12.513083333333332, "alt": 3570.0}, {"filename": "IMG_1507.JPG", "lat": 47.59713333333334, "lon": 12.513933333333334, "alt": 3564.0}, {"filename": "IMG_1508.JPG", "lat": 47.597300000000004, "lon": 12.51485, "alt": 3559.0}, {"filename": "IMG_1509.JPG", "lat": 47.59558333333334, "lon": 12.681016666666666, "alt": 3526.0}, {"filename": "IMG_1510.JPG", "lat": 47.59531666666667, "lon": 12.681866666666666, "alt": 3522.0}, {"filename": "IMG_1512.JPG", "lat": 47.59461666666667, "lon": 12.6838, "alt": 3524.0}, {"filename": "IMG_1513.JPG", "lat": 47.59426666666667, "lon": 12.685233333333333, "alt": 3522.0}, {"filename": "IMG_1514.JPG", "lat": 47.550866666666664, "lon": 12.769633333333335, "alt": 2914.0}, {"filename": "IMG_1515.JPG", "lat": 47.5505, "lon": 12.769933333333334, "alt": 2909.0}, {"filename": "IMG_1516.JPG", "lat": 47.549949999999995, "lon": 12.7705, "alt": 2903.0}, {"filename": "IMG_1517.JPG", "lat": 47.54965, "lon": 12.770750000000001, "alt": 2899.0}, {"filename": "IMG_1518.JPG", "lat": 47.5349, "lon": 12.791083333333333, "alt": 3195.0}, {"filename": "IMG_1519.JPG", "lat": 47.50411666666667, "lon": 12.838866666666668, "alt": 3527.0}, {"filename": "IMG_1520.JPG", "lat": 47.50395, "lon": 12.839416666666667, "alt": 3522.0}, {"filename": "IMG_1521.JPG", "lat": 47.503616666666666, "lon": 12.840016666666667, "alt": 3518.0}, {"filename": "IMG_1522.JPG", "lat": 47.503416666666666, "lon": 12.8474, "alt": 3595.0}, {"filename": "IMG_1523.JPG", "lat": 47.50333333333333, "lon": 12.847883333333334, "alt": 3592.0}, {"filename": "IMG_1524.JPG", "lat": 47.50315, "lon": 12.848616666666667, "alt": 3586.0}, {"filename": "IMG_1525.JPG", "lat": 47.49825, "lon": 12.8613, "alt": 3474.0}, {"filename": "IMG_1526.JPG", "lat": 47.498016666666665, "lon": 12.861666666666666, "alt": 3474.0}, {"filename": "IMG_1527.JPG", "lat": 47.487, "lon": 12.87955, "alt": 3694.0}, {"filename": "IMG_1528.JPG", "lat": 47.48625, "lon": 12.880283333333335, "alt": 3692.0}, {"filename": "IMG_1529.JPG", "lat": 47.4857, "lon": 12.880733333333334, "alt": 3688.0}, {"filename": "IMG_1530.JPG", "lat": 47.4652, "lon": 12.914133333333334, "alt": 3516.0}, {"filename": "IMG_1531.JPG", "lat": 47.464600000000004, "lon": 12.915766666666666, "alt": 3512.0}, {"filename": "IMG_1532.JPG", "lat": 47.46396666666667, "lon": 12.917549999999999, "alt": 3505.0}, {"filename": "IMG_1533.JPG", "lat": 47.463633333333334, "lon": 12.91845, "alt": 3501.0}, {"filename": "IMG_1534.JPG", "lat": 47.463433333333334, "lon": 12.918999999999999, "alt": 3496.0}, {"filename": "IMG_1535.JPG", "lat": 47.463100000000004, "lon": 12.919883333333333, "alt": 3493.0}, {"filename": "IMG_1536.JPG", "lat": 47.443099999999994, "lon": 12.982883333333334, "alt": 3791.0}, {"filename": "IMG_1537.JPG", "lat": 47.442699999999995, "lon": 12.983816666666666, "alt": 3785.0}, {"filename": "IMG_1539.JPG", "lat": 47.430299999999995, "lon": 13.005916666666666, "alt": 3717.0}, {"filename": "IMG_1541.JPG", "lat": 47.42391666666666, "lon": 13.03115, "alt": 3645.0}, {"filename": "IMG_1542.JPG", "lat": 47.423849999999995, "lon": 13.031566666666668, "alt": 3642.0}, {"filename": "IMG_1543.JPG", "lat": 47.42368333333333, "lon": 13.032633333333335, "alt": 3629.0}, {"filename": "IMG_1544.JPG", "lat": 47.433299999999996, "lon": 13.205866666666665, "alt": 2341.0}, {"filename": "IMG_1545.JPG", "lat": 47.43343333333333, "lon": 13.206466666666666, "alt": 2334.0}, {"filename": "IMG_1546.JPG", "lat": 47.433566666666664, "lon": 13.207183333333333, "alt": 2324.0}, {"filename": "IMG_1547.JPG", "lat": 47.433616666666666, "lon": 13.207916666666666, "alt": 2314.0}];
+
+        const TRACK_COLORS = [
+            Cesium.Color.DODGERBLUE,
+            Cesium.Color.ORANGERED,
+            Cesium.Color.LIMEGREEN,
+            Cesium.Color.GOLD,
+            Cesium.Color.MAGENTA,
+            Cesium.Color.CYAN,
+        ];
+
+        // --- Init Cesium ---
+        if (CESIUM_TOKEN) {
+            Cesium.Ion.defaultAccessToken = CESIUM_TOKEN;
+        }
+
+        const viewerOptions = {
+            animation: false,
+            timeline: false,
+            geocoder: false,
+            homeButton: true,
+            sceneModePicker: true,
+            baseLayerPicker: false,
+            navigationHelpButton: false,
+            fullscreenButton: true,
+            infoBox: false,
+            selectionIndicator: false,
+        };
+
+        if (CESIUM_TOKEN) {
+            viewerOptions.terrain = Cesium.Terrain.fromWorldTerrain();
+        }
+
+        const viewer = new Cesium.Viewer('cesiumContainer', viewerOptions);
+        viewer.scene.globe.enableLighting = false;
+        const imageEntities = [];
+
+        // --- Render data ---
+        function loadData() {
+            const legendEl = document.getElementById('legend');
+            let legendHtml = '';
+
+            TRACKS.forEach((track, i) => {
+                const color = TRACK_COLORS[i % TRACK_COLORS.length];
+                const positions = [];
+                for (const pt of track.points) {
+                    positions.push(Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt));
+                }
+                viewer.entities.add({
+                    name: track.name,
+                    polyline: {
+                        positions: positions,
+                        width: 3,
+                        material: color,
+                        clampToGround: false,
+                    }
+                });
+                const cssColor = color.toCssColorString();
+                legendHtml += `<div class="track-item"><span class="dot" style="background:${cssColor}"></span>${track.name} (${track.points.length} pts)</div>`;
+            });
+
+            if (IMAGES.length > 0) {
+                legendHtml += `<div class="track-item" style="margin-top:6px">📷 ${IMAGES.length} geotagged image(s)</div>`;
+            }
+            legendEl.innerHTML = legendHtml;
+
+            IMAGES.forEach((img) => {
+                const entity = viewer.entities.add({
+                    name: img.filename,
+                    position: Cesium.Cartesian3.fromDegrees(img.lon, img.lat, img.alt + 15),
+                    billboard: {
+                        image: 'thumbnails/' + encodeURIComponent(img.filename),
+                        width: 48,
+                        height: 48,
+                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                        heightReference: Cesium.HeightReference.NONE,
+                        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    },
+                    properties: {
+                        filename: img.filename,
+                        lat: img.lat,
+                        lon: img.lon,
+                        alt: img.alt,
+                    }
+                });
+                imageEntities.push(entity);
+            });
+
+            if (TRACKS.length > 0 || IMAGES.length > 0) {
+                viewer.zoomTo(viewer.entities);
+            }
+        }
+
+        // --- Selection & highlight ---
+        let selectedEntity = null;
+        let currentImageIndex = -1;
+        let connectorEntity = null;
+        const NORMAL_SIZE = 48;
+        const SELECTED_SIZE = 56;
+
+        function getEntityFilename(entity) {
+            return entity?.properties?.filename?.getValue?.();
+        }
+
+        function updateNavigationButtons() {
+            const hasImages = imageEntities.length > 0;
+            const atStart = currentImageIndex <= 0;
+            const atEnd = currentImageIndex >= imageEntities.length - 1;
+            document.getElementById('prevImageOverlayBtn').disabled = !hasImages || atStart;
+            document.getElementById('nextImageOverlayBtn').disabled = !hasImages || atEnd;
+        }
+
+        function highlightEntity(entity) {
+            if (selectedEntity && selectedEntity.billboard) {
+                selectedEntity.billboard.width = NORMAL_SIZE;
+                selectedEntity.billboard.height = NORMAL_SIZE;
+                selectedEntity.point = undefined;
+            }
+            if (connectorEntity) {
+                viewer.entities.remove(connectorEntity);
+                connectorEntity = null;
+            }
+            selectedEntity = entity;
+            if (entity && entity.billboard && entity.properties) {
+                entity.billboard.width = SELECTED_SIZE;
+                entity.billboard.height = SELECTED_SIZE;
+                const lat = entity.properties.lat?.getValue();
+                const lon = entity.properties.lon?.getValue();
+                const alt = entity.properties.alt?.getValue();
+                if (lat !== undefined && lon !== undefined && alt !== undefined) {
+                    const trackPos = Cesium.Cartesian3.fromDegrees(lon, lat, alt);
+                    const billboardPos = Cesium.Cartesian3.fromDegrees(lon, lat, alt + 15);
+                    connectorEntity = viewer.entities.add({
+                        polyline: {
+                            positions: [trackPos, billboardPos],
+                            width: 2,
+                            material: Cesium.Color.RED,
+                            clampToGround: false,
+                        },
+                        position: trackPos,
+                        point: {
+                            pixelSize: 10,
+                            color: Cesium.Color.RED,
+                            outlineColor: Cesium.Color.WHITE,
+                            outlineWidth: 2,
+                            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                        },
+                    });
+                }
+            }
+        }
+
+        const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        handler.setInputAction(function(click) {
+            const picked = viewer.scene.pick(click.position);
+            if (Cesium.defined(picked) && picked.id && picked.id.properties) {
+                const imageIndex = imageEntities.indexOf(picked.id);
+                if (imageIndex !== -1) {
+                    showImageAtIndex(imageIndex);
+                }
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+        function showImageAtIndex(index) {
+            if (index < 0 || index >= imageEntities.length) {
+                return;
+            }
+            currentImageIndex = index;
+            const entity = imageEntities[index];
+            const props = entity.properties;
+            const filename = getEntityFilename(entity);
+            showImagePanel(filename, props);
+            highlightEntity(entity);
+            updateNavigationButtons();
+        }
+
+        function showImagePanel(filename, props) {
+            const panel = document.getElementById('imagePanel');
+            const img = document.getElementById('panelImage');
+            const label = document.getElementById('panelLabel');
+            img.src = 'images/' + encodeURIComponent(filename);
+            const lat = props.lat?.getValue()?.toFixed(6) ?? '';
+            const lon = props.lon?.getValue()?.toFixed(6) ?? '';
+            const alt = props.alt?.getValue()?.toFixed(0) ?? '';
+            label.textContent = `${filename}  (${lat}, ${lon}, ${alt}m)`;
+            if (window.IMAGE_MODE === 'fullscreen') {
+                enterFullscreen();
+            }
+            panel.style.display = 'block';
+        }
+
+        function showPreviousImage() {
+            showImageAtIndex(currentImageIndex - 1);
+        }
+
+        function showNextImage() {
+            showImageAtIndex(currentImageIndex + 1);
+        }
+
+        function closeImagePanel() {
+            const panel = document.getElementById('imagePanel');
+            exitFullscreen();
+            panel.style.display = 'none';
+            currentImageIndex = -1;
+            updateNavigationButtons();
+            highlightEntity(null);
+        }
+
+        function toggleFullscreen() {
+            const panel = document.getElementById('imagePanel');
+            if (panel.classList.contains('fullscreen')) {
+                exitFullscreen();
+            } else {
+                enterFullscreen();
+            }
+        }
+
+        function enterFullscreen() {
+            const panel = document.getElementById('imagePanel');
+            if (panel.classList.contains('fullscreen')) {
+                return;
+            }
+            panel.dataset.prevLeft = panel.style.left;
+            panel.dataset.prevTop = panel.style.top;
+            panel.dataset.prevRight = panel.style.right;
+            panel.dataset.prevWidth = panel.style.width;
+            panel.dataset.prevHeight = panel.style.height;
+            panel.dataset.prevMaxWidth = panel.style.maxWidth;
+            panel.style.removeProperty('left');
+            panel.style.removeProperty('top');
+            panel.style.removeProperty('right');
+            panel.style.removeProperty('width');
+            panel.style.removeProperty('height');
+            panel.style.removeProperty('max-width');
+            panel.classList.add('fullscreen');
+        }
+
+        function exitFullscreen() {
+            const panel = document.getElementById('imagePanel');
+            if (!panel.classList.contains('fullscreen')) {
+                return;
+            }
+            panel.classList.remove('fullscreen');
+            panel.style.left = panel.dataset.prevLeft || '';
+            panel.style.top = panel.dataset.prevTop || '';
+            panel.style.right = panel.dataset.prevRight || '';
+            panel.style.width = panel.dataset.prevWidth || '';
+            panel.style.height = panel.dataset.prevHeight || '';
+            panel.style.maxWidth = panel.dataset.prevMaxWidth || '';
+        }
+
+        function anchorPanelToViewport(panel) {
+            panel.style.left = `${panel.offsetLeft}px`;
+            panel.style.top = `${panel.offsetTop}px`;
+            panel.style.right = 'auto';
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const panel = document.getElementById('imagePanel');
+            if (panel.style.display !== 'block') {
+                return;
+            }
+            if (e.key === 'Escape') closeImagePanel();
+            if (e.key === 'ArrowLeft') showPreviousImage();
+            if (e.key === 'ArrowRight') showNextImage();
+        });
+
+        (function setupPanelResize() {
+            const panel = document.getElementById('imagePanel');
+            const handle = document.getElementById('resizeHandle');
+            let resizeState = null;
+
+            handle.addEventListener('mousedown', (event) => {
+                if (panel.classList.contains('fullscreen')) {
+                    return;
+                }
+                anchorPanelToViewport(panel);
+                resizeState = {
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startWidth: panel.offsetWidth,
+                    startHeight: panel.offsetHeight,
+                };
+                event.preventDefault();
+            });
+
+            window.addEventListener('mousemove', (event) => {
+                if (!resizeState) {
+                    return;
+                }
+                const width = Math.max(320, resizeState.startWidth + (event.clientX - resizeState.startX));
+                const height = Math.max(220, resizeState.startHeight + (event.clientY - resizeState.startY));
+                panel.style.width = `${width}px`;
+                panel.style.height = `${height}px`;
+            });
+
+            window.addEventListener('mouseup', () => {
+                resizeState = null;
+            });
+        })();
+
+        (function setupPanelDrag() {
+            const panel = document.getElementById('imagePanel');
+            const toolbar = panel.querySelector('.panel-toolbar');
+            let dragState = null;
+
+            toolbar.addEventListener('mousedown', (event) => {
+                if (panel.classList.contains('fullscreen')) {
+                    return;
+                }
+                if (event.target.closest('button')) {
+                    return;
+                }
+                dragState = {
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startLeft: panel.offsetLeft,
+                    startTop: panel.offsetTop,
+                };
+                anchorPanelToViewport(panel);
+                event.preventDefault();
+            });
+
+            window.addEventListener('mousemove', (event) => {
+                if (!dragState) {
+                    return;
+                }
+                const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
+                const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
+                const nextLeft = Math.min(
+                    Math.max(0, dragState.startLeft + (event.clientX - dragState.startX)),
+                    maxLeft,
+                );
+                const nextTop = Math.min(
+                    Math.max(0, dragState.startTop + (event.clientY - dragState.startY)),
+                    maxTop,
+                );
+                panel.style.left = `${nextLeft}px`;
+                panel.style.top = `${nextTop}px`;
+            });
+
+            window.addEventListener('mouseup', () => {
+                dragState = null;
+            });
+        })();
+
+        loadData();
+    </script>
+</body>
+</html>
