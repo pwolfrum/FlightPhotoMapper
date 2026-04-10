@@ -47,6 +47,34 @@ class _TeeTextStream:
             stream.flush()
 
 
+class _TkinterLogWriter:
+    """TextIO-like wrapper that writes to a Tkinter text widget in real-time."""
+
+    def __init__(self, log_box: tk.Text, stdout_stream: TextIO | None = None):
+        self.log_box = log_box
+        self.stdout_stream = stdout_stream
+
+    def write(self, text: str) -> int:
+        if text:
+            try:
+                self.log_box.configure(state="normal")
+                self.log_box.insert("end", text)
+                self.log_box.see("end")
+                self.log_box.update_idletasks()
+            except tk.TclError:
+                pass  # Window may have been destroyed
+        if self.stdout_stream is not None:
+            self.stdout_stream.write(text)
+        return len(text)
+
+    def flush(self) -> None:
+        if self.stdout_stream is not None:
+            self.stdout_stream.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+
 def _capture_stdout(func, *args, **kwargs) -> tuple[Any, str]:
     """Run a function while capturing stdout for GUI display."""
     import sys
@@ -78,28 +106,15 @@ def _run_gui_request(request: LauncherRequest) -> None:
         if not _is_valid_directory(input_dir):
             return
 
-        success, session_log = _capture_stdout(
-            geotag,
-            input_dir,
-            time_offset_minutes=request["time_offset_minutes"],
-        )
-        if not success:
-            return
+        from .server import serve_with_streaming_log
 
-        from .server import serve
-
-        serve(
+        serve_with_streaming_log(
             input_dir,
+            processing_func=geotag,
+            processing_args=(input_dir,),
+            processing_kwargs={"time_offset_minutes": request["time_offset_minutes"]},
             port=request["port"],
             image_mode=request["image_mode"],
-            show_control_window=True,
-            session_log=_gui_session_log(
-                session_log,
-                [
-                    "Launching 3D viewer...",
-                    "Close the viewer control window to stop the application.",
-                ],
-            ),
         )
         return
 
@@ -128,32 +143,17 @@ def _run_gui_request(request: LauncherRequest) -> None:
         if not _is_valid_directory(input_dir):
             return
 
-        prepared, session_log = _capture_stdout(_prepare_gps_images, input_dir)
-        if not prepared:
-            return
+        from .server import serve_with_streaming_log
 
-        if not request["include_sequence_line"]:
-            session_log = _gui_session_log(
-                session_log,
-                ["Image sequence line disabled (--no-sequence-line)."],
-            )
-
-        from .server import serve
-
-        serve(
+        serve_with_streaming_log(
             input_dir,
+            processing_func=_prepare_gps_images,
+            processing_args=(input_dir,),
+            processing_kwargs={},
             port=request["port"],
             image_mode=request["image_mode"],
             include_tracks=False,
             include_image_sequence_track=request["include_sequence_line"],
-            show_control_window=True,
-            session_log=_gui_session_log(
-                session_log,
-                [
-                    "Launching 3D viewer...",
-                    "Close the viewer control window to stop the application.",
-                ],
-            ),
         )
         return
 
@@ -777,7 +777,7 @@ def orchestrate_export_mode(
     output_dir: Path | None = None,
     do_preview: bool = False,
 ) -> None:
-    """Export static site artifacts and optionally launch preview server."""
+    """Export static site artifacts from previously prepared images and optionally launch preview server."""
     if not _is_valid_directory(input_dir):
         return
 
@@ -819,15 +819,25 @@ def main():
         _run_gui_request(request)
         return
 
-    # Check for 'serve' subcommand
-    if args and args[0] == "serve":
+    subcommand = args[0] if args else ""
+
+    if subcommand in {"serve", "show"}:
+        print(
+            "Unknown mode: "
+            f"{subcommand}. "
+            "Use 'review' instead of 'serve' and 'browse' instead of 'show'."
+        )
+        return
+
+    # Check for 'review' subcommand
+    if subcommand == "review":
         port, fullscreen, _, remaining = _parse_subcommand_port_and_flags(args[1:])
 
         if remaining:
             input_dir = Path(remaining[0])
         else:
             input_dir = select_directory(
-                title="Select folder containing tracks and photos"
+                title="Select original input folder used for geotagging"
             )
 
         if not _is_valid_directory(input_dir):
@@ -840,18 +850,18 @@ def main():
         )
         return
 
-    # Check for 'show' subcommand — display GPS-tagged images without tracks
-    if args and args[0] == "show":
+    # Check for 'browse' subcommand — display GPS-tagged images without tracks
+    if subcommand == "browse":
         port, fullscreen, extra_flags, remaining = _parse_subcommand_port_and_flags(
             args[1:], extra_flags=("--no-sequence-line",)
         )
-        show_sequence_line = not extra_flags["--no-sequence-line"]
+        include_sequence_line = not extra_flags["--no-sequence-line"]
 
         if remaining:
             input_dir = Path(remaining[0])
         else:
             input_dir = select_directory(
-                title="Select folder containing GPS-tagged images"
+                title="Select folder containing already GPS-tagged images"
             )
 
         if not _is_valid_directory(input_dir):
@@ -861,12 +871,12 @@ def main():
             input_dir,
             port=port,
             image_mode=_choose_image_mode(fullscreen),
-            include_sequence_line=show_sequence_line,
+            include_sequence_line=include_sequence_line,
         )
         return
 
     # Check for 'export' subcommand
-    if args and args[0] == "export":
+    if subcommand == "export":
         export_args = args[1:]
         do_preview = "--preview" in export_args
         export_args = [a for a in export_args if a != "--preview"]
@@ -888,7 +898,7 @@ def main():
             input_dir = Path(remaining[0])
         else:
             input_dir = select_directory(
-                title="Select folder containing tracks and photos"
+                title="Select original input folder used for geotag/browse"
             )
 
         if not _is_valid_directory(input_dir):
@@ -901,17 +911,22 @@ def main():
         )
         return
 
+    # Optional explicit geotag subcommand.
+    geotag_args = args[1:] if subcommand == "geotag" else args
+
     # Parse --time-offset N (minutes)
     time_offset = 0.0
     consumed = set()
-    for i in range(len(args)):
-        if args[i] == "--time-offset" and i + 1 < len(args):
-            time_offset = float(args[i + 1])
+    for i in range(len(geotag_args)):
+        if geotag_args[i] == "--time-offset" and i + 1 < len(geotag_args):
+            time_offset = float(geotag_args[i + 1])
             consumed.add(i)
             consumed.add(i + 1)
 
     positional = [
-        a for i, a in enumerate(args) if i not in consumed and not a.startswith("--")
+        a
+        for i, a in enumerate(geotag_args)
+        if i not in consumed and not a.startswith("--")
     ]
 
     if positional:

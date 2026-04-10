@@ -36,7 +36,8 @@ def export(input_dir: Path, output_dir: Path) -> None:
     generated_images_dir = get_dataset_images_dir(input_dir)
     if not generated_images_dir.is_dir():
         print(f"  No generated images folder found for {input_dir}")
-        print("  Run the geotagging pipeline first.")
+        print("  Run geotag mode first (or browse mode for already GPS-tagged photos),")
+        print("  then export again using the same input folder.")
         return
 
     # Collect track data
@@ -125,7 +126,7 @@ def export(input_dir: Path, output_dir: Path) -> None:
         "  NOTE: Opening index.html from file:// won't work (browser blocks Cesium tile requests)."
     )
     print(
-        "  Use 'python main.py export --preview' or host on a web server / GitHub Pages."
+        "  Use 'uv run flightphotomapper export path/to/my-trip --preview' or host on a web server / GitHub Pages."
     )
 
 

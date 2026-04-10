@@ -15,14 +15,14 @@ FlightPhotoMapper geotags photos from GPS tracks (IGC/GPX) and visualizes them i
   6. Launch Flask Cesium viewer (`server.serve`)
 
 ## CLI Modes
-- `flightphotomapper [INPUT_DIR]`:
-  Geotag images, write output to `INPUT_DIR/geotagged/`, launch viewer.
-- `flightphotomapper serve [INPUT_DIR] [--port N] [--fullscreen]`:
-  View-only mode using track files from `INPUT_DIR` and geotagged images from `INPUT_DIR/geotagged/`.
-- `flightphotomapper show [INPUT_DIR] [--port N] [--fullscreen]`:
+- `flightphotomapper [INPUT_DIR]` or `flightphotomapper geotag [INPUT_DIR]`:
+  Geotag images and launch viewer.
+- `flightphotomapper review [INPUT_DIR] [--port N] [--fullscreen]`:
+  View-only mode reusing previously prepared/generated results for the same input folder.
+- `flightphotomapper browse [INPUT_DIR] [--port N] [--fullscreen] [--no-sequence-line]`:
   Display images that already contain GPS EXIF; no tracks required.
 - `flightphotomapper export [INPUT_DIR] [--output DIR] [--preview]`:
-  Export static site with inline track/image metadata and copied image assets.
+  Export static site with inline track/image metadata and copied image assets (requires previously prepared images for the same input folder).
 
 ## Data Model
 - `track_parser.TrackPoint`: `time`, `lat`, `lon`, `alt`

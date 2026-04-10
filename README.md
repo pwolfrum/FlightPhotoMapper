@@ -10,7 +10,7 @@ Main capabilities:
 - Render tracks and photos in a Cesium 3D map viewer
 - Review previously processed trips (to save processing time)
 - Browse already geotagged photos without the need for gps tracks (e.g. for vacation pictures)
-- Export a static shareable web viewer
+- Export a static shareable web viewer from previously prepared trips
 
 Author: Philipp Wolfrum
 
@@ -92,7 +92,7 @@ Modes in the launcher:
 - Geotag: Match photos to tracks and display in map.
 - Review: Show previously generated trip results (simply select original input folder for autodetection)
 - Browse: Show photos that already contain GPS tags (no tracks, but connected by temporal order).
-- Export: Build a static website package for sharing or hosting.
+- Export: Build a static website package from previously prepared trip (use the same input folder).
 
 All existing CLI commands remain available and are documented below.
 
@@ -102,6 +102,7 @@ Place track files and photos in a folder, then run:
 
 ```
 uv run flightphotomapper path/to/my-trip
+uv run flightphotomapper geotag path/to/my-trip
 ```
 
 This will:
@@ -124,32 +125,33 @@ uv run flightphotomapper
 - Timestamped images outside all track time ranges are also ignored.
 - The console prints a clear list of those outside-range files, including timestamps.
 
-### View only (skip geotagging)
+### Review (skip geotagging)
 
 To view results from a previous run without re-geotagging, pass the same source folder you used for geotagging:
 
 ```
-uv run flightphotomapper serve path/to/my-trip
-uv run flightphotomapper serve path/to/my-trip --port 8080
+uv run flightphotomapper review path/to/my-trip
+uv run flightphotomapper review path/to/my-trip --port 8080
 ```
 
 Or omit the path for a folder picker:
 
 ```
-uv run flightphotomapper serve
+uv run flightphotomapper review
 ```
 
 ### Options
 
 | Option | Description |
 |---|---|
+| `geotag [INPUT_DIR]` | Geotag mode. Match photos to tracks, write GPS EXIF, and open the viewer (also the default when no subcommand is given). |
 | `--time-offset N` | Shift image timestamps by N minutes before matching (decimal allowed, e.g. `-13` or `7.5`). Only available in geotagging mode. |
-| `serve` | View-only mode (no geotagging). Will reuse the processed images from a previous run |
-| `serve --port N` | Set the server port (default: 5000) |
-| `serve --fullscreen` | Open images in fullscreen mode by default |
-| `show` | Display all GPS-tagged images on the map (no tracks needed). Does image format conversion if needed |
-| `show --no-sequence-line` | In show mode, hide the thin gray line that connects images in timestamp order |
-| `export` | Export a self-contained static site, which can be hosted on the web |
+| `review` | View-only mode (no geotagging). Reuses processed images from a previous run (same input folder). |
+| `review --port N` | Set the server port (default: 5000) |
+| `review --fullscreen` | Open images in fullscreen mode by default |
+| `browse` | Display all GPS-tagged images on the map (no tracks needed). Does image format conversion if needed |
+| `browse --no-sequence-line` | In browse mode, hide the thin gray line that connects images in timestamp order |
+| `export` | Export a self-contained static site from previously prepared trip (same input folder as geotag/browse) |
 | `export --output DIR` | Set the export output directory (default: `<input>/export/`) |
 | `export --preview` | Start a local static preview server after export (default port: 8000) |
 
@@ -163,26 +165,32 @@ uv run flightphotomapper path/to/my-trip --time-offset -13
 
 A **negative** value shifts images earlier (camera was ahead), **positive** shifts later (camera was behind). Each run overwrites the previous generated output for that dataset, so you can quickly iterate to find the right value.
 
-### Show GPS-tagged images (no tracks)
+### Browse GPS-tagged images (no tracks)
 
 Display images that already have GPS coordinates in their EXIF on the 3D map — no track files needed:
 
 ```
-uv run flightphotomapper show path/to/photos
-uv run flightphotomapper show
+uv run flightphotomapper browse path/to/photos
+uv run flightphotomapper browse
 ```
 
-Disable the temporal connecting line in show mode:
+Disable the temporal connecting line in browse mode:
 
 ```
-uv run flightphotomapper show path/to/photos --no-sequence-line
+uv run flightphotomapper browse path/to/photos --no-sequence-line
 ```
 
 Images without GPS tags are listed but skipped. HEIC/HEIF files are automatically converted to JPEG for browser compatibility.
 
 ### Export static site
 
-Generate a self-contained HTML site that can be hosted anywhere (GitHub Pages, Netlify, etc.):
+Generate a self-contained HTML site that can be hosted anywhere (GitHub Pages, Netlify, etc.).
+
+Prerequisite: export reuses already prepared geotagged images from app storage. Run one of these first, then export using the same input folder:
+- `flightphotomapper <input-folder>` (Geotag mode)
+- `flightphotomapper browse <input-folder>` (Browse mode for photos that already contain GPS EXIF)
+
+Then run:
 
 ```
 uv run flightphotomapper export path/to/my-trip

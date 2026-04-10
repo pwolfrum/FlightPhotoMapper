@@ -66,11 +66,12 @@ def test_run_gui_request_geotag_passes_session_log_to_viewer(monkeypatch, tmp_pa
 
     import gpsimagestomap.server as server
 
-    def fake_serve(input_dir, **kwargs):
+    def fake_stream_log(input_dir, processing_func, **kwargs):
         captured["input_dir"] = input_dir
+        captured["processing_func"] = processing_func
         captured.update(kwargs)
 
-    monkeypatch.setattr(server, "serve", fake_serve)
+    monkeypatch.setattr(server, "serve_with_streaming_log", fake_stream_log)
 
     _run_gui_request(
         {
@@ -86,12 +87,8 @@ def test_run_gui_request_geotag_passes_session_log_to_viewer(monkeypatch, tmp_pa
     )
 
     assert captured["input_dir"] == tmp_path
-    assert captured["show_control_window"] is True
-    assert "IGNORED: 2 image(s) without EXIF timestamp" in captured["session_log"]
-    assert (
-        "Close the viewer control window to stop the application."
-        in captured["session_log"]
-    )
+    assert captured["port"] == 5000
+    assert captured["image_mode"] == "panel"
 
 
 def test_run_gui_request_browse_disables_sequence_line(monkeypatch, tmp_path):
@@ -107,11 +104,12 @@ def test_run_gui_request_browse_disables_sequence_line(monkeypatch, tmp_path):
 
     import gpsimagestomap.server as server
 
-    def fake_serve(input_dir, **kwargs):
+    def fake_stream_log(input_dir, processing_func, **kwargs):
         captured["input_dir"] = input_dir
+        captured["processing_func"] = processing_func
         captured.update(kwargs)
 
-    monkeypatch.setattr(server, "serve", fake_serve)
+    monkeypatch.setattr(server, "serve_with_streaming_log", fake_stream_log)
 
     _run_gui_request(
         {
@@ -129,5 +127,3 @@ def test_run_gui_request_browse_disables_sequence_line(monkeypatch, tmp_path):
     assert captured["input_dir"] == tmp_path
     assert captured["include_tracks"] is False
     assert captured["include_image_sequence_track"] is False
-    assert captured["show_control_window"] is True
-    assert "Image sequence line disabled" in captured["session_log"]

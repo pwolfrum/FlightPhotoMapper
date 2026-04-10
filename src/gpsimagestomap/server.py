@@ -351,6 +351,159 @@ def _show_viewer_control_window(url: str, stop_server, session_log: str) -> None
     root.mainloop()
 
 
+def serve_with_streaming_log(
+    input_dir: Path,
+    processing_func,
+    processing_args: tuple = (),
+    processing_kwargs: dict | None = None,
+    port: int = 5000,
+    image_mode: str = "panel",
+    include_tracks: bool = True,
+    include_image_sequence_track: bool = True,
+) -> None:
+    """Show control window immediately and stream processing output in real-time."""
+    import sys
+    from contextlib import redirect_stdout
+
+    if processing_kwargs is None:
+        processing_kwargs = {}
+
+    # Create and show the processing window immediately
+    root = tk.Tk()
+    root.title("FlightPhotoMapper - Processing")
+    root.geometry("760x500")
+    root.minsize(520, 320)
+    root.update_idletasks()
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(200, lambda: root.attributes("-topmost", False))
+    root.after(220, root.focus_force)
+
+    container = ttk.Frame(root, padding=12)
+    container.pack(fill="both", expand=True)
+
+    status_label = ttk.Label(
+        container,
+        text="Processing...",
+        font=("Segoe UI", 12, "bold"),
+    )
+    status_label.pack(anchor="w")
+
+    ttk.Label(
+        container,
+        text="Processing your images. Please wait...",
+        justify="left",
+        wraplength=700,
+    ).pack(anchor="w", pady=(6, 10))
+
+    log_box = scrolledtext.ScrolledText(container, wrap="word", height=18)
+    log_box.pack(fill="both", expand=True)
+
+    button_row = ttk.Frame(container)
+    button_row.pack(fill="x", pady=(10, 0))
+
+    stop_requested = False
+
+    def request_stop() -> None:
+        nonlocal stop_requested
+        stop_requested = True
+
+    stop_button = ttk.Button(button_row, text="Cancel", command=request_stop)
+    stop_button.pack(side="right")
+
+    # Prepare log writer that writes to the text box
+    import io
+
+    class LogWriter:
+        def __init__(self, text_widget):
+            self.text = text_widget
+            self.buffer = io.StringIO()
+
+        def write(self, msg: str) -> int:
+            if msg:
+                try:
+                    self.text.configure(state="normal")
+                    self.text.insert("end", msg)
+                    self.text.see("end")
+                    self.text.update_idletasks()
+                    root.update()
+                except tk.TclError:
+                    pass
+                self.buffer.write(msg)
+            return len(msg)
+
+        def flush(self) -> None:
+            pass
+
+        def isatty(self) -> bool:
+            return False
+
+        def getvalue(self) -> str:
+            return self.buffer.getvalue()
+
+    log_writer = LogWriter(log_box)
+    stdout_backup = sys.stdout
+
+    # Run processing with real-time log capture
+    processing_result = None
+    try:
+        with redirect_stdout(log_writer):
+            processing_result = processing_func(*processing_args, **processing_kwargs)
+    except Exception as e:
+        log_writer.write(f"\nError during processing: {e}\n")
+        root.after(2000, root.destroy)
+        return
+    finally:
+        sys.stdout = stdout_backup
+
+    if not processing_result:
+        log_writer.write("\nProcessing failed. Closing in 2 seconds...\n")
+        root.after(2000, root.destroy)
+        return
+
+    # Processing complete, now start the server and update window
+    load_app_env(Path.cwd())
+    _kill_port(port)
+    app = create_app(
+        input_dir,
+        image_mode=image_mode,
+        include_tracks=include_tracks,
+        include_image_sequence_track=include_image_sequence_track,
+    )
+
+    # Update UI to show "Viewer is running"
+    status_label.configure(text="Viewer is running")
+    stop_button.pack_forget()
+
+    url = f"http://localhost:{port}"
+    log_writer.write(f"\n\nLaunching viewer at {url}...\n")
+
+    # Start Flask server in background thread
+    httpd = make_server("127.0.0.1", port, app, threaded=True)
+    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    server_thread.start()
+
+    # Brief delay then open browser
+    root.after(500, lambda: _open_url(url))
+
+    def stop_and_close() -> None:
+        httpd.shutdown()
+        httpd.server_close()
+        server_thread.join(timeout=2)
+        root.destroy()
+
+    # Replace buttons with "Open map again" and "Stop viewer"
+    open_btn = ttk.Button(
+        button_row, text="Open map again", command=lambda: _open_url(url)
+    )
+    open_btn.pack(side="left")
+    close_btn = ttk.Button(button_row, text="Stop viewer", command=stop_and_close)
+    close_btn.pack(side="right")
+
+    root.protocol("WM_DELETE_WINDOW", stop_and_close)
+    root.mainloop()
+
+
 def serve(
     input_dir: Path,
     port: int = 5000,

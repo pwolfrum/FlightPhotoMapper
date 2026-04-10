@@ -12,7 +12,7 @@ TOOLTIPS = {
     "geotag": "Match photos to tracks and display in map.",
     "review": "Show previously generated trip results",
     "browse": "Show photos that already contain GPS tags, no tracks",
-    "export": "Build a static website package for sharing or hosting.",
+    "export": "Build a static website package from previously prepared trip.",
 }
 
 MODE_HELP = {
@@ -42,7 +42,8 @@ MODE_HELP = {
     ),
     "export": (
         "Export mode\n"
-        "Builds a static site package (index.html + images + thumbnails) for sharing or hosting.\n\n"
+        "Builds a static site package (index.html + images + thumbnails) for sharing or hosting.\n"
+        "Requires previously prepared trip data from the same input folder (run Geotag first, or Browse for already GPS-tagged photos).\n\n"
         "Options:\n"
         "- Output folder (optional): custom destination; leave empty to use <input>/export.\n"
         "- Preview after export: start local static preview server automatically.\n"
@@ -159,6 +160,154 @@ def run_launcher() -> dict | None:
             token_status_var.set("Cesium token: configured")
         else:
             token_status_var.set("Cesium token: missing (terrain disabled)")
+
+    def open_help_dialog() -> None:
+        dialog = tk.Toplevel(root)
+        dialog.title("FlightPhotoMapper — Help")
+        dialog.transient(root)
+        dialog.grab_set()
+        dialog.resizable(True, True)
+        dialog.geometry("680x600")
+        dialog.minsize(520, 400)
+
+        # Scrollable body
+        outer = ttk.Frame(dialog)
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        sb.grid(row=0, column=1, sticky="ns")
+
+        body = ttk.Frame(canvas, padding=14)
+        body_id = canvas.create_window((0, 0), window=body, anchor="nw")
+
+        def _sync(_e=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _resize(e):
+            canvas.itemconfigure(body_id, width=e.width)
+
+        body.bind("<Configure>", _sync)
+        canvas.bind("<Configure>", _resize)
+
+        W = 620  # wrap width for labels
+
+        def section(title):
+            ttk.Label(body, text=title, font=("Segoe UI", 10, "bold")).pack(
+                anchor="w", pady=(14, 2)
+            )
+            ttk.Separator(body, orient="horizontal").pack(fill="x", pady=(0, 6))
+
+        def para(text):
+            ttk.Label(body, text=text, justify="left", wraplength=W).pack(
+                anchor="w", pady=(0, 4)
+            )
+
+        def link(label, url):
+            lbl = tk.Label(body, text=label, fg="#0a58ca", cursor="hand2")
+            lbl.pack(anchor="w")
+            lbl.bind("<Button-1>", lambda _e: webbrowser.open(url))
+
+        # ── Getting started ──────────────────────────────────────────────
+        ttk.Label(body, text="Getting Started", font=("Segoe UI", 12, "bold")).pack(
+            anchor="w", pady=(0, 6)
+        )
+
+        section("Step 1 — Prepare your input folder")
+        para(
+            "Put your GPS track file(s) and your photos into the same folder. "
+            "The app reads only files directly in that folder — not in subfolders."
+        )
+        para(
+            "Example folder layout:\n"
+            "    my-trip/\n"
+            "      flight.igc        ← GPS track (IGC or GPX)\n"
+            "      IMG_001.jpg       ← photos with EXIF timestamps\n"
+            "      IMG_002.heic"
+        )
+        para("Supported track formats: IGC, GPX")
+        para("Supported photo formats: JPEG, HEIC/HEIF, TIFF, PNG")
+
+        section("Step 2 — Cesium terrain token (optional)")
+        para(
+            "A free Cesium ion token enables 3D terrain in the viewer. "
+            "Without it the globe still works but appears flat.\n"
+            "Get a free token, then click Setup to save it."
+        )
+        link(
+            "Get a free Cesium token → ion.cesium.com/tokens",
+            "https://ion.cesium.com/tokens",
+        )
+
+        # ── Modes ────────────────────────────────────────────────────────
+        section("Modes")
+
+        para(
+            "Geotag\n"
+            "Matches your photos to the GPS track by timestamp and writes GPS "
+            "coordinates into the images. Opens the 3D map viewer afterwards. "
+            "Output is saved automatically — you do not need to manage any output folder."
+        )
+        para(
+            "Review\n"
+            "Opens the 3D viewer for a previously geotagged trip without reprocessing. "
+            "Select the same folder you originally used for geotagging."
+        )
+        para(
+            "Browse\n"
+            "Shows photos that already have GPS coordinates (e.g. taken with a phone). "
+            "No track file needed. Images are connected by time order on the map."
+        )
+        para(
+            "Export\n"
+            "Builds a self-contained HTML file you can share or host on the web "
+            "(e.g. GitHub Pages). Requires previously prepared geotagged images "
+            "from the same input folder (run Geotag first, or Browse for already "
+            "GPS-tagged photos). Output goes into an export subfolder by default."
+        )
+
+        # ── Timing correction ────────────────────────────────────────────
+        section("Correcting camera clock drift")
+        para(
+            "If photos appear at wrong positions on the track, your camera clock "
+            "was probably set to a different timezone or was slightly off."
+        )
+        para(
+            "Use the 'Time offset (minutes)' field in the launcher to shift photo "
+            "timestamps before matching. Try multiples of 60 for timezone differences.  "
+            "Note that typically the app itself will autodetect timezone mismatch and "
+            "suggest a correction, so focusing on camera clock drift is usually sufficient.\n"
+            " Negative offset values shift photos earlier; positive later.\n"
+            "Each run overwrites the previous result, so you can quickly iterate."
+        )
+
+        # ── Viewer controls ──────────────────────────────────────────────
+        section("Viewer controls (in the browser)")
+        para(
+            "Left-click + drag to shift  •  Scroll or Right-click + drag to zoom  •  Ctrl + Left-click + drag to tilt/rotate\n"
+            "Click a photo thumbnail to open the full image.\n"
+            "Close the viewer control window (or click Stop viewer) to exit."
+        )
+
+        # ── Footer ───────────────────────────────────────────────────────
+        footer = ttk.Frame(dialog, padding=(14, 6, 14, 10))
+        footer.pack(fill="x")
+        link_lbl = tk.Label(
+            footer,
+            text="Full documentation: github.com/pwolfrum/FlightPhotoMapper",
+            fg="#0a58ca",
+            cursor="hand2",
+        )
+        link_lbl.pack(side="left")
+        link_lbl.bind(
+            "<Button-1>",
+            lambda _e: webbrowser.open("https://github.com/pwolfrum/FlightPhotoMapper"),
+        )
+        ttk.Button(footer, text="Close", command=dialog.destroy).pack(side="right")
 
     def open_about_dialog() -> None:
         dialog = tk.Toplevel(root)
@@ -308,6 +457,9 @@ def run_launcher() -> dict | None:
     header_actions.pack(side="right")
     ttk.Button(header_actions, text="About", command=open_about_dialog).pack(
         side="right"
+    )
+    ttk.Button(header_actions, text="Help", command=open_help_dialog).pack(
+        side="right", padx=(0, 8)
     )
     ttk.Button(header_actions, text="Setup", command=open_setup_dialog).pack(
         side="right", padx=(0, 8)
