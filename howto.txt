@@ -1,0 +1,148 @@
+FlightPhotoMapper Standalone How-To (Windows)
+
+This guide is for the Windows standalone app (flightphotomapper.exe).
+
+It explains:
+- how to start the app
+- how the launcher works
+- what each mode does
+- how your input folder should be structured
+- how to set a Cesium token for 3D terrain
+
+
+1. Start the App
+
+1) Extract the downloaded zip to a normal folder (do not run from inside the zip).
+2) Open the extracted folder.
+3) Double-click flightphotomapper.exe.
+
+The launcher window opens first.
+
+
+2. Launcher Overview
+
+The launcher is the central control panel.
+
+Main parts:
+- Mode selection: Geotag, Review, Browse
+- Input folder: choose the folder you want to process/view
+- Mode options: options depend on selected mode
+- Run button: starts processing/viewing
+- Setup button: configure Cesium token
+
+
+3. Input Folder Structure
+
+For best results, put track files and photos directly in one folder:
+
+my-trip/
+  flight.igc
+  route.gpx
+  IMG_001.jpg
+  IMG_002.heic
+
+Important:
+- Track files and photos must be directly in the selected folder.
+- Nested subfolders are not scanned in the main geotag workflow.
+
+Supported tracks:
+- IGC
+- GPX
+
+Supported images:
+- JPEG, HEIC/HEIF, TIFF, PNG
+
+
+4. Mode: Geotag
+
+Use this mode when you have track files and timestamped photos and want GPS data written into output images.
+
+What it does:
+1) Reads tracks from your selected folder.
+2) Reads photo timestamps.
+3) Matches photos to track time.
+4) Writes GPS coordinates to output images.
+5) Opens the 3D map viewer.
+
+Notes:
+- Photos without EXIF timestamps are skipped.
+- Photos outside all track time ranges are skipped.
+- You can use Time offset (minutes) in the launcher if camera clock time was off.
+
+
+5. Mode: Review
+
+Use this mode to reopen an already processed trip without geotagging again.
+
+How to use:
+- Select the same original input folder you used when geotagging.
+- Run in Review mode.
+
+Good for:
+- quick re-checks
+- reopening map/photo results without reprocessing
+
+
+6. Mode: Browse
+
+Use this mode when photos already contain GPS coordinates in EXIF.
+
+What it does:
+- shows GPS-tagged images on the 3D map
+- does not require track files
+
+Notes:
+- Images without GPS tags are skipped.
+- HEIC/HEIF inputs are converted for browser compatibility.
+
+
+7. Set Up Cesium Token (for 3D terrain)
+
+Without a token, the viewer still works, but Cesium world terrain features are limited.
+
+Steps:
+1) In launcher, click Setup.
+2) Open/create a free token at: https://ion.cesium.com/tokens
+3) Paste token into the dialog.
+4) Click Save.
+
+Token storage location (Windows):
+- %LOCALAPPDATA%/FlightPhotoMapper/config/.env
+
+
+8. Viewer Basics
+
+In the browser map viewer:
+- Tracks are shown as colored lines.
+- Photos are shown as clickable markers/thumbnails.
+- Clicking a photo marker opens the image panel.
+- Use arrows to navigate previous/next image.
+
+
+9. Where Generated Output Is Stored
+
+Generated/processed images are stored in the app-managed work directory, not in your original trip folder.
+
+Default location:
+- %LOCALAPPDATA%/FlightPhotoMapper/work/
+
+Each input folder gets its own stable dataset folder inside that work root.
+
+
+10. Troubleshooting
+
+- App does not start from zip:
+  Extract the zip first, then run flightphotomapper.exe.
+
+- No photos shown in Geotag mode:
+  Check that photos have EXIF timestamps and are in the selected folder. 
+  Note: EXIF data of different cameras is notoriously divergent. If the app does not work with your camera images, feel free to contact the author.
+
+- Photos appear at wrong places along track:
+  Use the launcher time offset option to compensate camera clock drift.
+
+- Terrain not visible as expected:
+  Re-check token setup in launcher Setup dialog.
+
+- Browser did not open automatically:
+  Open http://localhost:5000 manually in your browser (or the configured port).

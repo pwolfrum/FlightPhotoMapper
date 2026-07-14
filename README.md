@@ -9,7 +9,7 @@ Main capabilities:
 - Write interpolated GPS EXIF coordinates into images
 - Render tracks and photos in a Cesium 3D map viewer
 - Review previously processed trips (to save processing time)
-- Browse already geotagged photos without the need for gps tracks (e.g. for vacation pictures)
+- Browse already geotagged photos without the need for GPS tracks (e.g. for vacation pictures)
 
 Author: Philipp Wolfrum
 
@@ -27,37 +27,15 @@ This installs the package in editable mode and registers the `flightphotomapper`
 For 3D terrain in the viewer, configure a free [Cesium ion](https://ion.cesium.com/tokens) token:
 
 - Launcher users: click Setup in the GUI; the token is saved to `%LOCALAPPDATA%/FlightPhotoMapper/config/.env`
-- Developer/manual workflow: you can still create a project `.env` file
+- Developer/manual workflow: create a project `.env` file with the following content
 
 ```
 CESIUM_ION_TOKEN="your_token_here"
 ```
 
-## Windows standalone executable
+## Input folder structure
 
-Build a one-folder Windows executable:
-
-```
-scripts\build_exe.bat
-```
-
-Successful output is:
-
-```
-dist\flightphotomapper\flightphotomapper.exe
-```
-
-For distribution to non-technical users:
-
-1. Zip the folder `dist\flightphotomapper\`
-2. Upload that zip to a GitHub Release
-3. Users download zip, extract, and run `flightphotomapper.exe`
-
-One-folder mode is intentional; startup is faster and more reliable than one-file mode.
-
-## Folder structure
-
-All commands expect the same input folder — one that contains your track files and photos directly in that folder:
+All commands expect the same kind of input folder — one that contains your track files and photos directly in that folder:
 
 ```
 my-trip/
@@ -86,7 +64,7 @@ Run without arguments to open the launcher GUI:
 uv run flightphotomapper
 ```
 
-Modes in the launcher:
+Modes in the launcher (see the details in the section below):
 
 - Geotag: Match photos to tracks and display in map.
 - Review: Show previously generated trip results (simply select original input folder for autodetection)
@@ -94,7 +72,9 @@ Modes in the launcher:
 
 All existing CLI commands remain available and are documented below.
 
-### Geotag + View (default)
+### The different modes (and how to run them from CLI)
+
+#### Geotag + View (default)
 
 Place track files and photos in a folder, then run:
 
@@ -113,17 +93,27 @@ This will:
 Omit the path to get a folder picker dialog:
 
 ```
-uv run flightphotomapper
+uv run flightphotomapper geotag
 ```
 
-#### Geotag behavior notes
+##### Correcting camera clock drift
+
+If photos appear at the wrong position along the track, the camera clock was likely off by a few minutes. This can be corrected via an offset that is applied to the image time.
+
+A **negative** value shifts images earlier (camera clock was ahead), **positive** shifts later (camera was behind). Each run overwrites the previous generated output for that dataset, so you can quickly iterate to find the right value.
+
+The time offset can be provided in the launcher GUI or via the dedicated option `--time-offset N` from CLI. 
+
+Additionally, the app tries to infer if camera images are matched improperly to tracks and suggests corrections by whole hours. This may be helpful if camera had a different time zone/daylight savings setting.
+
+##### Geotag behavior notes
 
 - Images without EXIF timestamps are always ignored.
 - The console prints a clear list of ignored files without timestamps.
 - Timestamped images outside all track time ranges are also ignored.
 - The console prints a clear list of those outside-range files, including timestamps.
 
-### Review (skip geotagging)
+#### Review (skip geotagging)
 
 To view results from a previous run without re-geotagging, pass the same source folder you used for geotagging:
 
@@ -138,29 +128,7 @@ Or omit the path for a folder picker:
 uv run flightphotomapper review
 ```
 
-### Options
-
-| Option | Description |
-|---|---|
-| `geotag [INPUT_DIR]` | Geotag mode. Match photos to tracks, write GPS EXIF, and open the viewer (also the default when no subcommand is given). |
-| `--time-offset N` | Shift image timestamps by N minutes before matching (decimal allowed, e.g. `-13` or `7.5`). Only available in geotagging mode. |
-| `review` | View-only mode (no geotagging). Reuses processed images from a previous run (same input folder). |
-| `review --port N` | Set the server port (default: 5000) |
-| `review --fullscreen` | Open images in fullscreen mode by default |
-| `browse` | Display all GPS-tagged images on the map (no tracks needed). Does image format conversion if needed |
-| `browse --no-sequence-line` | In browse mode, hide the thin gray line that connects images in timestamp order |
-
-### Correcting camera clock drift
-
-If photos appear at the wrong position along the track, the camera clock was likely off by a few minutes. Use `--time-offset` to correct this:
-
-```
-uv run flightphotomapper path/to/my-trip --time-offset -13
-```
-
-A **negative** value shifts images earlier (camera was ahead), **positive** shifts later (camera was behind). Each run overwrites the previous generated output for that dataset, so you can quickly iterate to find the right value.
-
-### Browse GPS-tagged images (no tracks)
+#### Browse GPS-tagged images (no tracks)
 
 Display images that already have GPS coordinates in their EXIF on the 3D map — no track files needed:
 
@@ -176,6 +144,41 @@ uv run flightphotomapper browse path/to/photos --no-sequence-line
 ```
 
 Images without GPS tags are listed but skipped. HEIC/HEIF files are automatically converted to JPEG for browser compatibility.
+
+#### Summary of CLI Options
+
+| Option | Description |
+|---|---|
+| `geotag [INPUT_DIR]` | Geotag mode. |
+| `--time-offset N` | Shift image timestamps by N minutes before matching (decimal allowed, e.g. `-13` or `7.5`). Only available in geotagging mode. |
+| `review` | View-only mode (no geotagging).  |
+| `review --port N` | Set the server port (default: 5000) |
+| `review --fullscreen` | Open images in fullscreen mode by default |
+| `browse` | Display all GPS-tagged images on the map (no tracks needed). |
+| `browse --no-sequence-line` | In browse mode, hide the thin gray line that connects images in timestamp order |
+
+
+## Windows standalone executable
+
+Build a one-folder Windows executable:
+
+```
+scripts\build_exe.bat
+```
+
+Successful output is:
+
+```
+dist\flightphotomapper\flightphotomapper.exe
+```
+
+For distribution to non-technical users:
+
+1. Zip the folder `dist\flightphotomapper\`
+2. Upload that zip to a GitHub Release
+3. Users download zip, extract to a folder, and run `flightphotomapper.exe` from that folder
+
+The standalone release folder also includes `howto.txt` with end-user instructions.
 
 ## Linux/WSL browser notes
 
