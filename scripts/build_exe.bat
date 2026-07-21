@@ -6,7 +6,7 @@ call uv sync --group dev
 if errorlevel 1 goto :fail
 
 echo [2/4] Building standalone executable (one-folder)...
-call uv run --group dev pyinstaller --clean --noconfirm flightphotomapper.spec
+call uv run --group dev python -m PyInstaller --clean --noconfirm flightphotomapper.spec
 if errorlevel 1 goto :fail
 
 echo [3/4] Cleaning up one-file artifacts...

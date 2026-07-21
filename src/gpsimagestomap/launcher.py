@@ -23,7 +23,7 @@ MODE_HELP = {
         "Options:\n"
         "- Time offset (minutes): shift photo times before matching (use negative if camera was ahead). This is helpful to correct for camera clock drift.\n"
         "- Port: local web port for the viewer server (default: 5000).\n"
-        "- Image mode: Default size for image popups (can always be resized at runtime).\n"
+        "- Image mode: Default size for image popups (can always be resized at runtime)."
     ),
     "review": (
         "Review mode\n"
@@ -109,7 +109,7 @@ def run_launcher(
     """
     root = tk.Tk()
     root.title("FlightPhotoMapper Launcher")
-    root.geometry("640x520")
+    root.geometry("640x535")
     root.minsize(420, 260)
 
     request: dict | None = None
@@ -155,9 +155,6 @@ def run_launcher(
     header_row = ttk.Frame(container)
     header_row.pack(fill="x")
 
-    title = ttk.Label(header_row, text="Choose Mode", font=("Segoe UI", 12, "bold"))
-    title.pack(side="left", anchor="w")
-
     token_status_var = tk.StringVar()
 
     def refresh_token_status() -> None:
@@ -168,37 +165,37 @@ def run_launcher(
             token_status_var.set("Cesium token: missing (terrain disabled)")
 
     def open_help_dialog() -> None:
-        dialog = tk.Toplevel(root)
-        dialog.title("FlightPhotoMapper — Help")
-        dialog.transient(root)
-        dialog.grab_set()
-        dialog.resizable(True, True)
-        dialog.geometry("680x600")
-        dialog.minsize(520, 400)
+        dialog_help = tk.Toplevel(root)
+        dialog_help.title("FlightPhotoMapper — Help")
+        dialog_help.transient(root)
+        dialog_help.grab_set()
+        dialog_help.resizable(True, True)
+        dialog_help.geometry("680x600")
+        dialog_help.minsize(520, 400)
 
         # Scrollable body
-        outer = ttk.Frame(dialog)
-        outer.pack(fill="both", expand=True)
-        outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(0, weight=1)
+        outer_help = ttk.Frame(dialog_help)
+        outer_help.pack(fill="both", expand=True)
+        outer_help.columnconfigure(0, weight=1)
+        outer_help.rowconfigure(0, weight=1)
 
-        canvas = tk.Canvas(outer, highlightthickness=0)
-        sb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=sb.set)
-        canvas.grid(row=0, column=0, sticky="nsew")
+        canvas_help = tk.Canvas(outer_help, highlightthickness=0)
+        sb = ttk.Scrollbar(outer_help, orient="vertical", command=canvas_help.yview)
+        canvas_help.configure(yscrollcommand=sb.set)
+        canvas_help.grid(row=0, column=0, sticky="nsew")
         sb.grid(row=0, column=1, sticky="ns")
 
-        body = ttk.Frame(canvas, padding=14)
-        body_id = canvas.create_window((0, 0), window=body, anchor="nw")
+        body = ttk.Frame(canvas_help, padding=14)
+        body_id = canvas_help.create_window((0, 0), window=body, anchor="nw")
 
         def _sync(_e=None):
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas_help.configure(scrollregion=canvas_help.bbox("all"))
 
         def _resize(e):
-            canvas.itemconfigure(body_id, width=e.width)
+            canvas_help.itemconfigure(body_id, width=e.width)
 
         body.bind("<Configure>", _sync)
-        canvas.bind("<Configure>", _resize)
+        canvas_help.bind("<Configure>", _resize)
 
         W = 620  # wrap width for labels
 
@@ -241,7 +238,7 @@ def run_launcher(
         section("Step 2 — Cesium terrain token (optional)")
         para(
             "A free Cesium ion token enables 3D terrain in the viewer. "
-            "Without it the globe still works but appears flat.\n"
+            "Without it the globe still works but appears flat and in some cases black.\n"
             "Get a free token, then click Setup to save it."
         )
         link(
@@ -272,11 +269,14 @@ def run_launcher(
         section("Correcting camera clock drift")
         para(
             "If photos appear at wrong positions on the track, your camera clock "
-            "was probably set to a different timezone or was slightly off."
+            "was probably set to a different timezone or was slightly off "
+            "(time drift is surprisingly common if a camara sits in your cockpit "
+            "for months)."
         )
+
         para(
             "Use the 'Time offset (minutes)' field in the launcher to shift photo "
-            "timestamps before matching. Try multiples of 60 for timezone differences.  "
+            "timestamps before matching. Try multiples of 60 for timezone differences. \n"
             "Note that typically the app itself will autodetect timezone mismatch and "
             "suggest a correction, so focusing on camera clock drift is usually sufficient.\n"
             " Negative offset values shift photos earlier; positive later.\n"
@@ -292,7 +292,7 @@ def run_launcher(
         )
 
         # ── Footer ───────────────────────────────────────────────────────
-        footer = ttk.Frame(dialog, padding=(14, 6, 14, 10))
+        footer = ttk.Frame(dialog_help, padding=(14, 6, 14, 10))
         footer.pack(fill="x")
         link_lbl = tk.Label(
             footer,
@@ -305,7 +305,7 @@ def run_launcher(
             "<Button-1>",
             lambda _e: webbrowser.open("https://github.com/pwolfrum/FlightPhotoMapper"),
         )
-        ttk.Button(footer, text="Close", command=dialog.destroy).pack(side="right")
+        ttk.Button(footer, text="Close", command=dialog_help.destroy).pack(side="right")
 
     def open_about_dialog() -> None:
         dialog = tk.Toplevel(root)
@@ -385,7 +385,7 @@ def run_launcher(
         body.pack(fill="both", expand=True)
 
         ttk.Label(
-            body, text="Cesium Terrain Setup", font=("Segoe UI", 11, "bold")
+            body, text="Cesium Token Setup", font=("Segoe UI", 11, "bold")
         ).pack(anchor="w")
         ttk.Label(
             body,
@@ -435,7 +435,7 @@ def run_launcher(
             # now close the dialog after saving
             dialog.destroy()
 
-        ttk.Button(button_row, text="Cesium token page", command=open_token_page).pack(
+        ttk.Button(button_row, text="Create Cesium token", command=open_token_page).pack(
             side="left"
         )
         ttk.Button(button_row, text="Close", command=dialog.destroy).pack(side="right")
@@ -459,20 +459,40 @@ def run_launcher(
     ttk.Button(header_actions, text="Help", command=open_help_dialog).pack(
         side="right", padx=(0, 8)
     )
-    ttk.Button(header_actions, text="Setup", command=open_setup_dialog).pack(
+    ttk.Button(header_actions, text="Setup token", command=open_setup_dialog).pack(
         side="right", padx=(0, 8)
     )
 
     ttk.Label(
-        container,
+        header_row,
         textvariable=token_status_var,
         foreground="#555555",
-    ).pack(anchor="w", pady=(4, 0))
+    ).pack(side="left", anchor="w")
 
     refresh_token_status()
 
-    mode_frame = ttk.Frame(container)
-    mode_frame.pack(fill="x", pady=(8, 10))
+    input_group = ttk.LabelFrame(container, text="Input Folder", padding=10)
+    input_group.pack(fill="x", pady=(8, 10))
+
+    input_entry = ttk.Entry(input_group, textvariable=input_dir_var)
+    input_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+    input_group.columnconfigure(0, weight=1)
+
+    def browse_input():
+        chosen = filedialog.askdirectory(
+            title="Select input folder containing all photos and tracks that should be visualized"
+        )
+        if chosen:
+            input_dir_var.set(chosen)
+
+    browse_button = ttk.Button(input_group, text="Browse...", command=browse_input)
+    browse_button.grid(row=0, column=1, sticky="e")
+
+    mode_title = ttk.LabelFrame(container, text="Choose mode", padding=10)
+    mode_title.pack(fill="x", pady=(0, 0))
+
+    mode_frame = ttk.Frame(mode_title)
+    mode_frame.pack(fill="x", pady=(0, 10))
 
     modes = [
         ("Geotag", "geotag"),
@@ -485,28 +505,21 @@ def run_launcher(
         rb.grid(row=0, column=i, sticky="w", padx=(0, 12))
         _ToolTip(rb, TOOLTIPS[value])
 
-    input_group = ttk.LabelFrame(container, text="Input Folder", padding=10)
-    input_group.pack(fill="x", pady=(0, 10))
-
-    input_entry = ttk.Entry(input_group, textvariable=input_dir_var)
-    input_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-    input_group.columnconfigure(0, weight=1)
-
-    def browse_input():
-        chosen = filedialog.askdirectory(
-            title="Select input folder containing photos and tracks (optional)"
-        )
-        if chosen:
-            input_dir_var.set(chosen)
-
-    browse_button = ttk.Button(input_group, text="Browse...", command=browse_input)
-    browse_button.grid(row=0, column=1, sticky="e")
-
-    options_group = ttk.LabelFrame(container, text="Options", padding=10)
-    options_group.pack(fill="both", expand=True)
+    # input_group is created above the mode controls now
+    options_group = ttk.LabelFrame(mode_title, text="Options", padding=10)
+    options_group.pack(fill="x", pady=(0, 8))
 
     options_frame = ttk.Frame(options_group)
-    options_frame.pack(fill="both", expand=True)
+    options_frame.pack(fill="x")
+
+    mode_help_label = ttk.Label(
+        mode_title,
+        text="",
+        foreground="#555555",
+        wraplength=560,
+        justify="left",
+    )
+    mode_help_label.pack(anchor="w")
 
     def render_options(*_args):
         for child in options_frame.winfo_children():
@@ -579,19 +592,13 @@ def run_launcher(
             ).grid(row=row_index, column=0, columnspan=2, sticky="w", pady=4)
             row_index += 1
 
-        ttk.Label(
-            options_frame,
-            text=MODE_HELP[mode],
-            foreground="#555555",
-            wraplength=560,
-            justify="left",
-        ).grid(row=row_index, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        mode_help_label.configure(text=MODE_HELP[mode])
 
     mode_var.trace_add("write", render_options)
     render_options()
 
-    button_row = ttk.Frame(footer)
-    button_row.pack(fill="x", pady=(10, 0))
+    button_row_footer = ttk.Frame(footer)
+    button_row_footer.pack(fill="x", pady=(0, 0))
 
     def cancel():
         if on_close is not None:
@@ -669,9 +676,9 @@ def run_launcher(
                 enable_callback=lambda _enabled: None,
             )
 
-    cancel_button = ttk.Button(button_row, text="Cancel", command=cancel)
+    cancel_button = ttk.Button(button_row_footer, text="Cancel", command=cancel)
     cancel_button.pack(side="right")
-    run_button = ttk.Button(button_row, text="Run", command=run)
+    run_button = ttk.Button(button_row_footer, text="Run", command=run)
     run_button.pack(side="right", padx=(0, 8))
 
     root.protocol("WM_DELETE_WINDOW", cancel)
