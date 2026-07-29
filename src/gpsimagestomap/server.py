@@ -6,7 +6,7 @@ import subprocess
 import threading
 import tkinter as tk
 import webbrowser
-from datetime import timezone
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from tkinter import scrolledtext, ttk
@@ -142,6 +142,15 @@ def _build_image_sequence_track(
     }
 
 
+def _normalize_timestamp_for_sort(timestamp: datetime | None) -> datetime | None:
+    """Normalize timestamps to timezone-aware UTC for stable ordering."""
+    if timestamp is None:
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
+
+
 def _read_gps_from_exif(path: Path) -> tuple[float, float, float] | None:
     """Read GPS lat/lon/alt from a generated image's EXIF."""
     try:
@@ -237,34 +246,54 @@ def create_app(
                     pass
 
     # Pre-load generated image metadata
-    images_data = []
-    image_sequence_points: list[dict[str, str | float]] = []
+    image_entries: list[dict[str, object]] = []
     if generated_images_dir.is_dir():
         for p in sorted(generated_images_dir.iterdir()):
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
                 coords = _read_gps_from_exif(p)
                 if coords:
                     img_info = read_image_info(p)
-                    images_data.append(
+                    image_entries.append(
                         {
                             "filename": p.name,
                             "lat": coords[0],
                             "lon": coords[1],
                             "alt": coords[2],
+                            "timestamp": _normalize_timestamp_for_sort(
+                                img_info.timestamp
+                            ),
                         }
                     )
-                    if img_info.timestamp is not None:
-                        timestamp = img_info.timestamp
-                        if timestamp.tzinfo is None:
-                            timestamp = timestamp.replace(tzinfo=timezone.utc)
-                        image_sequence_points.append(
-                            {
-                                "time": timestamp.isoformat(),
-                                "lat": coords[0],
-                                "lon": coords[1],
-                                "alt": coords[2],
-                            }
-                        )
+
+    image_entries.sort(
+        key=lambda entry: (
+            entry["timestamp"] is None,
+            entry["timestamp"] or datetime.min.replace(tzinfo=timezone.utc),
+            str(entry["filename"]).lower(),
+        )
+    )
+
+    images_data = []
+    image_sequence_points: list[dict[str, str | float]] = []
+    for entry in image_entries:
+        images_data.append(
+            {
+                "filename": entry["filename"],
+                "lat": entry["lat"],
+                "lon": entry["lon"],
+                "alt": entry["alt"],
+            }
+        )
+        timestamp = entry["timestamp"]
+        if timestamp is not None:
+            image_sequence_points.append(
+                {
+                    "time": timestamp.isoformat(),
+                    "lat": entry["lat"],
+                    "lon": entry["lon"],
+                    "alt": entry["alt"],
+                }
+            )
 
     if not include_tracks and include_image_sequence_track:
         image_sequence_track = _build_image_sequence_track(image_sequence_points)

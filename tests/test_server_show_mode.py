@@ -121,6 +121,37 @@ def test_show_mode_exposes_virtual_image_sequence_track(tmp_path: Path) -> None:
     assert points[1]["lat"] == 48.2
 
 
+def test_images_api_orders_images_by_timestamp_not_filename(tmp_path: Path) -> None:
+    trip_dir = tmp_path / 'trip'
+    trip_dir.mkdir(parents=True)
+    geotagged_dir = get_dataset_images_dir(trip_dir)
+    geotagged_dir.mkdir(parents=True)
+
+    _write_jpeg_with_timestamp_and_gps(
+        geotagged_dir / 'z.jpg',
+        '2024:01:01 12:10:00',
+        lat=48.2,
+        lon=11.2,
+        alt=1200,
+    )
+    _write_jpeg_with_timestamp_and_gps(
+        geotagged_dir / 'a.jpg',
+        '2024:01:01 12:00:00',
+        lat=48.1,
+        lon=11.1,
+        alt=1100,
+    )
+
+    app = create_app(trip_dir, include_tracks=False)
+    client = app.test_client()
+
+    resp = client.get('/api/images')
+    assert resp.status_code == 200
+
+    images = json.loads(resp.data)
+    assert [img['filename'] for img in images] == ['a.jpg', 'z.jpg']
+
+
 def test_show_mode_can_disable_virtual_image_sequence_track(tmp_path: Path) -> None:
     trip_dir = tmp_path / "trip"
     trip_dir.mkdir(parents=True)
